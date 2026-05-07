@@ -1,0 +1,123 @@
+{
+  "uid": "f1-realtime-local",
+  "title": "F1 Realtime Local",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "5s",
+  "time": {
+    "from": "now-30m",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "driver",
+        "label": "Driver",
+        "type": "query",
+        "datasource": {
+          "type": "mysql",
+          "uid": "singlestore_realtime"
+        },
+        "query": "SELECT DISTINCT driver_number FROM f1_car_data ORDER BY driver_number",
+        "refresh": 1,
+        "includeAll": true,
+        "multi": false
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Rows per realtime table",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 8,
+        "h": 6
+      },
+      "datasource": {
+        "type": "mysql",
+        "uid": "singlestore_realtime"
+      },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT 'car' AS metric, COUNT(*) AS value FROM f1_car_data UNION ALL SELECT 'location', COUNT(*) FROM f1_location_data UNION ALL SELECT 'position', COUNT(*) FROM f1_position_data UNION ALL SELECT 'intervals', COUNT(*) FROM f1_intervals_data",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Speed over time",
+      "gridPos": {
+        "x": 8,
+        "y": 0,
+        "w": 16,
+        "h": 8
+      },
+      "datasource": {
+        "type": "mysql",
+        "uid": "singlestore_realtime"
+      },
+      "targets": [
+        {
+          "format": "time_series",
+          "rawSql": "SELECT date AS time, speed AS value, CONCAT('Driver ', driver_number) AS metric FROM f1_car_data WHERE date BETWEEN FROM_UNIXTIME($__unixEpochFrom()) AND FROM_UNIXTIME($__unixEpochTo()) AND ('$driver' = 'All' OR driver_number = '$driver') ORDER BY date",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Throttle and brake",
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "mysql",
+        "uid": "singlestore_realtime"
+      },
+      "targets": [
+        {
+          "format": "time_series",
+          "rawSql": "SELECT date AS time, throttle AS value, CONCAT('Throttle ', driver_number) AS metric FROM f1_car_data WHERE date BETWEEN FROM_UNIXTIME($__unixEpochFrom()) AND FROM_UNIXTIME($__unixEpochTo()) AND ('$driver' = 'All' OR driver_number = '$driver') ORDER BY date",
+          "refId": "A"
+        },
+        {
+          "format": "time_series",
+          "rawSql": "SELECT date AS time, brake AS value, CONCAT('Brake ', driver_number) AS metric FROM f1_car_data WHERE date BETWEEN FROM_UNIXTIME($__unixEpochFrom()) AND FROM_UNIXTIME($__unixEpochTo()) AND ('$driver' = 'All' OR driver_number = '$driver') ORDER BY date",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "table",
+      "title": "Latest car telemetry",
+      "gridPos": {
+        "x": 12,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "mysql",
+        "uid": "singlestore_realtime"
+      },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT date, driver_number, speed, rpm, n_gear, throttle, brake, drs, session_key FROM f1_car_data ORDER BY date DESC LIMIT 100",
+          "refId": "A"
+        }
+      ]
+    }
+  ]
+}

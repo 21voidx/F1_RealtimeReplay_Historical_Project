@@ -1,0 +1,40 @@
+# ─── Environment & Secrets ────────────────────────────────
+.env
+*.env.local
+secrets/
+.vscode/
+# ─── Python ───────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+dist/
+build/
+*.egg-info/
+.eggs/
+
+# ─── Docker ───────────────────────────────────────────────
+docker-compose.override.yml
+
+# ─── IDE ──────────────────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# ─── Logs ─────────────────────────────────────────────────
+*.log
+logs/
+
+# ─── Jupyter ──────────────────────────────────────────────
+.ipynb_checkpoints/
+*.ipynb
+Makefile
+credentials/service-account.json
+image/
+

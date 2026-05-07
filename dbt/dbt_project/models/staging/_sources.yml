@@ -1,0 +1,202 @@
+version: 2
+
+sources:
+  - name: HITESH
+    database: DATAEXPERT_STUDENT
+    schema: HITESH
+    tables:
+      - name: F1_POSITION
+        description: "Driver positions throughout a session"
+        columns:
+          - name: date
+            tests:
+              - not_null
+          - name: driver_number
+            tests:
+              - not_null
+          - name: meeting_key
+            tests:
+              - not_null
+          - name: position
+            tests:
+              - not_null
+          - name: session_key
+            tests:
+              - not_null
+
+      - name: F1_LAPS
+        description: "Detailed information about individual laps"
+        columns:
+          - name: driver_number
+            tests:
+              - not_null
+          - name: lap_number
+            tests:
+              - not_null
+
+      - name: F1_CAR_DATA
+        description: "Real-time telemetry data from F1 cars"
+        columns:
+
+          - name: date
+            tests:
+              - not_null
+
+          - name: driver_number
+            tests:
+              - not_null
+              - relationships:
+                  to: source('HITESH', 'F1_DRIVERS')
+                  field: driver_number
+
+          - name: drs
+            tests:
+              - not_null
+              - valid_drs
+
+          - name: rpm
+            tests:
+              - not_null
+              - rpm_range
+
+          - name: speed
+            tests:
+              - not_null
+              - speed_range
+
+          - name: throttle
+            tests:
+              - not_null
+              - throttle_range
+
+        tests:
+          - brake_throttle_combination  # Table-level test for brake-throttle combination
+
+      - name: F1_INTERVALS
+        description: "Real-time interval data between drivers during races"
+        columns:
+          - name: date
+            tests:
+              - not_null
+          - name: driver_number
+            tests:
+              - not_null
+          - name: session_key
+            tests:
+              - not_null
+
+      - name: F1_PIT
+        description: "Information about pit stops"
+        columns:
+          - name: date
+            tests:
+              - not_null
+          - name: driver_number
+            tests:
+              - not_null
+          - name: lap_number
+            tests:
+              - not_null
+
+      - name: F1_MEETINGS
+        description: "Information about F1 race meetings"
+        columns:
+          - name: circuit_key
+            tests:
+              - not_null
+          - name: circuit_short_name
+            tests:
+              - not_null
+          - name: country_name
+            tests:
+              - not_null
+          - name: date_start
+            tests:
+              - not_null
+          - name: meeting_name
+            tests:
+              - not_null
+          - name: year
+            tests:
+              - not_null
+
+      - name: F1_SESSIONS
+        description: "Information about individual F1 sessions"
+        columns:
+          - name: session_key
+            tests:
+              - not_null
+              - unique
+          - name: meeting_key
+            tests:
+              - not_null
+          - name: session_name
+            tests:
+              - not_null
+          - name: session_type
+            tests:
+              - not_null
+
+      - name: F1_DRIVERS
+        description: "Information about F1 drivers"
+        columns:
+          - name: driver_number
+            tests:
+              - not_null
+          - name: broadcast_name
+            tests:
+              - not_null
+          - name: full_name
+            tests:
+              - not_null
+          - name: name_acronym
+            tests:
+              - not_null
+      - name: F1_STINTS
+        description: "Information about individual driving stints"
+        columns:
+          - name: compound
+            tests:
+              - accepted_values:
+                  values: ['SOFT', 'MEDIUM', 'HARD', 'INTERMEDIATE', 'WET', null]  # Added null as accepted value
+                  quote: true  # Ensure string values are properly quoted
+                  where: "compound IS NULL OR compound IN ('SOFT', 'MEDIUM', 'HARD', 'INTERMEDIATE', 'WET')"
+
+          - name: driver_number
+            tests:
+              - not_null:
+                  where: "driver_number != 0"
+              - relationships:
+                  to: source('HITESH', 'F1_DRIVERS')
+                  field: driver_number
+                  where: "driver_number is not null"
+
+          - name: lap_start
+            tests:
+              - not_null
+              - range_check:
+                  min_value: 1
+                  max_value: 71
+
+          - name: lap_end
+            tests:
+              - not_null
+              - range_check:
+                  min_value: 0
+                  max_value: 79
+
+          - name: stint_number
+            tests:
+              - not_null
+              - range_check:
+                  min_value: 1
+                  max_value: 9
+
+          - name: tyre_age_at_start
+            tests:
+              - not_null:
+                  where: "tyre_age_at_start is not null"
+              - range_check:
+                  min_value: 0
+                  max_value: 28
+
