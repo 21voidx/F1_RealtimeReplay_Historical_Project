@@ -1,8 +1,0 @@
-.env
-logs/
-**/__pycache__/
-*.pyc
-.DS_Store
-hitesh_dbt_project/target/
-hitesh_dbt_project/dbt_modules/
-hitesh_dbt_project/logs/
