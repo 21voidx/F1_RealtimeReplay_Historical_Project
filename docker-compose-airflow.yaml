@@ -62,6 +62,7 @@ x-airflow-common:
     - ${AIRFLOW_PROJ_DIR:-.}/logs:/opt/airflow/logs
     - ${AIRFLOW_PROJ_DIR:-.}/config:/opt/airflow/config
     - ${AIRFLOW_PROJ_DIR:-.}/plugins:/opt/airflow/plugins
+    - ${AIRFLOW_PROJ_DIR:-.}/include:/opt/airflow/include
     # - ./credentials/service-account.json:/opt/gcp/service-account.json:ro
     - /var/run/docker.sock:/var/run/docker.sock
     - dbt/dbt_project:/opt/airflow/dbt/dbt_project
