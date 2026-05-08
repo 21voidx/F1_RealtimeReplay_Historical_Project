@@ -168,7 +168,7 @@ services:
 
   airflow-init:
     <<: *airflow-common
-    container_name: f1_airflow-init
+    container_name: airflow-init
     network_mode: host
     entrypoint: /bin/bash
     command:
@@ -272,8 +272,6 @@ services:
       - airflow
     depends_on:
       postgres:
-        condition: service_healthy
-      trino:
         condition: service_healthy
 
 volumes:
