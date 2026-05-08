@@ -26,28 +26,28 @@ from include.hitesh.scripts.f1_snowflake_etl_2 import F1DataIngestion
 AIRFLOW_HOME = Path(os.environ.get("AIRFLOW_HOME", "/opt/airflow"))
 PATH_TO_DBT_PROJECT = AIRFLOW_HOME / "dbt" / "dbt_project"
 PATH_TO_DBT_PROFILES = AIRFLOW_HOME / "dbt" / "dbt_profiles" / "profiles.yml"
-PATH_TO_DBT_EXECUTABLE = AIRFLOW_HOME / "dbt_venv" / "bin" / "dbt"
+PATH_TO_DBT_EXECUTABLE = Path("/opt/dbt_venv/bin/dbt")
 
 # Cosmos config:
 # - ProjectConfig = where the dbt project lives
 # - ProfileConfig = how dbt connects to Snowflake
 # - ExecutionConfig = where/how Cosmos runs dbt at runtime
 project_config = ProjectConfig(
-    dbt_project_path=PATH_TO_DBT_PROJECT,
+    dbt_project_path=str(PATH_TO_DBT_PROJECT),
 )
 
 profile_config = ProfileConfig(
     profile_name="formula_one",
     target_name="dev",
-    profiles_yml_filepath=PATH_TO_DBT_PROFILES,
+    profiles_yml_filepath=str(PATH_TO_DBT_PROFILES),
 )
 
 execution_config = ExecutionConfig(
-    dbt_executable_path=PATH_TO_DBT_EXECUTABLE,
+    dbt_executable_path=str(PATH_TO_DBT_EXECUTABLE),
 )
 
 render_config = RenderConfig(
-    dbt_executable_path=PATH_TO_DBT_EXECUTABLE,
+    dbt_executable_path=str(PATH_TO_DBT_EXECUTABLE),
     select=[
         "staging.stg_f1_*",
         "intermediate.int_*",
@@ -437,7 +437,7 @@ def f1_data_pipeline_backfill():
             "dbt executable": PATH_TO_DBT_EXECUTABLE,
         }
 
-        missing_paths = [f"{name}: {path}" for name, path in required_paths.items() if not path.exists()]
+        missing_paths = [f"{name}: {path}" for name, path in required_paths.items() if not Path(path).exists()]
         if missing_paths:
             raise FileNotFoundError("Missing dbt/Cosmos path(s): " + "; ".join(missing_paths))
 
