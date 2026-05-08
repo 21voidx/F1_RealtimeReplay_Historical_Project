@@ -151,6 +151,7 @@ services:
 
   airflow-triggerer:
     <<: *airflow-common
+    container_name: f1_airflow-triggerer
     command: triggerer
     network_mode: host
     healthcheck:
