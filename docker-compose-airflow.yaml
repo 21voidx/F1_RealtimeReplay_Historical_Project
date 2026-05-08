@@ -65,8 +65,8 @@ x-airflow-common:
     - ${AIRFLOW_PROJ_DIR:-.}/include:/opt/airflow/include
     # - ./credentials/service-account.json:/opt/gcp/service-account.json:ro
     - /var/run/docker.sock:/var/run/docker.sock
-    - dbt/dbt_project:/opt/airflow/dbt/dbt_project
-    - dbt/dbt_profiles:/opt/airflow/dbt/dbt_profiles
+    - ./dbt/dbt_project:/opt/airflow/dbt/dbt_project
+    - ./dbt/dbt_profiles:/opt/airflow/dbt/dbt_profiles
   user: "${AIRFLOW_UID:-50000}:0"
   group_add:
     - "989"
