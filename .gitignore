@@ -37,4 +37,5 @@ logs/
 Makefile
 credentials/service-account.json
 image/
+chatgpt/
 

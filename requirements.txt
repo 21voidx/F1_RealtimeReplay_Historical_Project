@@ -1,8 +1,18 @@
 # requirements.txt
 # apache-airflow-providers-postgres==6.2.3
-apache-airflow-providers-mysql==6.3.3
+# apache-airflow-providers-mysql==6.3.3
 apache-airflow-providers-snowflake==6.4.0
 apache-airflow-providers-docker==4.4.2
 # apache-airflow-providers-trino==6.5.0
 # psycopg2-binary==2.9.10
+apache-airflow-providers-common-sql
+snowflake-snowpark-python[pandas]
+snowflake-connector-python[pandas]
+dbt-core==1.11.7
+dbt-snowflake==1.11.4
 requests==2.32.5
+astronomer-cosmos
+python-dotenv
+pandas
+numpy
+pyarrow

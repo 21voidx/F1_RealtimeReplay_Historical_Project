@@ -47,6 +47,16 @@ x-airflow-common:
     _PIP_ADDITIONAL_REQUIREMENTS: ${_PIP_ADDITIONAL_REQUIREMENTS:-}
     AIRFLOW_CONFIG: '/opt/airflow/config/airflow.cfg'
     # GOOGLE_APPLICATION_CREDENTIALS: /opt/gcp/service-account.json
+    AIRFLOW_HOME: /opt/airflow
+    DBT_PROFILES_DIR: /opt/airflow/dbt/dbt_profiles
+
+    SNOWFLAKE_ACCOUNT: ${SNOWFLAKE_ACCOUNT}
+    SNOWFLAKE_USER: ${SNOWFLAKE_USER}
+    SNOWFLAKE_PASSWORD: ${SNOWFLAKE_PASSWORD}
+    SNOWFLAKE_ROLE: ${SNOWFLAKE_ROLE}
+    SNOWFLAKE_DATABASE: ${SNOWFLAKE_DATABASE}
+    SNOWFLAKE_WAREHOUSE: ${SNOWFLAKE_WAREHOUSE}
+    SNOWFLAKE_SCHEMA: ${SNOWFLAKE_SCHEMA}
   volumes:
     - ${AIRFLOW_PROJ_DIR:-.}/dags:/opt/airflow/dags
     - ${AIRFLOW_PROJ_DIR:-.}/logs:/opt/airflow/logs
@@ -54,6 +64,8 @@ x-airflow-common:
     - ${AIRFLOW_PROJ_DIR:-.}/plugins:/opt/airflow/plugins
     # - ./credentials/service-account.json:/opt/gcp/service-account.json:ro
     - /var/run/docker.sock:/var/run/docker.sock
+    - dbt/dbt_project:/opt/airflow/dbt/dbt_project
+    - dbt/dbt_profiles:/opt/airflow/dbt/dbt_profiles
   user: "${AIRFLOW_UID:-50000}:0"
   group_add:
     - "989"
