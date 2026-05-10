@@ -47,8 +47,8 @@ x-airflow-common:
     _PIP_ADDITIONAL_REQUIREMENTS: ${_PIP_ADDITIONAL_REQUIREMENTS:-}
     AIRFLOW_CONFIG: '/opt/airflow/config/airflow.cfg'
     # GOOGLE_APPLICATION_CREDENTIALS: /opt/gcp/service-account.json
-    AIRFLOW_HOME: /opt/airflow
-    DBT_PROFILES_DIR: /opt/airflow/dbt/dbt_profiles
+    # AIRFLOW_HOME: /opt/airflow
+    # DBT_PROFILES_DIR: /opt/airflow/dbt/dbt_profiles
 
     SNOWFLAKE_ACCOUNT: ${SNOWFLAKE_ACCOUNT}
     SNOWFLAKE_USER: ${SNOWFLAKE_USER}
