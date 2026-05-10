@@ -46,7 +46,6 @@ x-airflow-common:
     AIRFLOW__CORE__DAGBAG_IMPORT_TIMEOUT: '60'
     _PIP_ADDITIONAL_REQUIREMENTS: ${_PIP_ADDITIONAL_REQUIREMENTS:-}
     AIRFLOW_CONFIG: '/opt/airflow/config/airflow.cfg'
-    AIRFLOW_UID: ${AIRFLOW_UID:-50000}
     # GOOGLE_APPLICATION_CREDENTIALS: /opt/gcp/service-account.json
     AIRFLOW_HOME: /opt/airflow
     DBT_PROFILES_DIR: /opt/airflow/dbt/dbt_profiles
@@ -66,8 +65,6 @@ x-airflow-common:
     - ${AIRFLOW_PROJ_DIR:-.}/include:/opt/airflow/include
     # - ./credentials/service-account.json:/opt/gcp/service-account.json:ro
     - /var/run/docker.sock:/var/run/docker.sock
-    - ./dbt/dbt_project:/opt/airflow/dbt/dbt_project
-    - ./dbt/dbt_profiles:/opt/airflow/dbt/dbt_profiles
   user: "${AIRFLOW_UID:-50000}:0"
   group_add:
     - "989"
@@ -175,7 +172,7 @@ services:
     command:
       - -c
       - |
-        if [[ -z "$${AIRFLOW_UID}" ]]; then
+        if [[ -z "${AIRFLOW_UID}" ]]; then
           echo
           echo -e "\033[1;33mWARNING!!!: AIRFLOW_UID not set!\e[0m"
           echo "If you are on Linux, you SHOULD follow the instructions below to set "
@@ -221,14 +218,14 @@ services:
         echo
         echo "Creating missing opt dirs if missing:"
         echo
-        mkdir -v -p /opt/airflow/{logs,dags,plugins,config,include,dbt}
+        mkdir -v -p /opt/airflow/{logs,dags,plugins,config}
         echo
         echo "Airflow version:"
         /entrypoint airflow version
         echo
         echo "Files in shared volumes:"
         echo
-        ls -la /opt/airflow/{logs,dags,plugins,config,include,dbt}
+        ls -la /opt/airflow/{logs,dags,plugins,config}
         echo
         echo "Running airflow config list to create default config file if missing."
         echo
@@ -236,23 +233,19 @@ services:
         echo
         echo "Files in shared volumes:"
         echo
-        ls -la /opt/airflow/{logs,dags,plugins,config,include,dbt}
+        ls -la /opt/airflow/{logs,dags,plugins,config}
         echo
-        echo "Change ownership of bind-mounted folders to $${AIRFLOW_UID}:0"
+        echo "Change ownership of files in /opt/airflow to ${AIRFLOW_UID}:0"
         echo
-        # Do NOT chown /opt/airflow recursively. That would also touch large virtualenvs,
-        # which makes airflow-init very slow on Docker overlayfs.
-        chown -R "$${AIRFLOW_UID}:0" \
-          /opt/airflow/logs \
-          /opt/airflow/dags \
-          /opt/airflow/plugins \
-          /opt/airflow/config \
-          /opt/airflow/include \
-          /opt/airflow/dbt
+        chown -R "${AIRFLOW_UID}:0" /opt/airflow/
+        echo
+        echo "Change ownership of files in shared volumes to ${AIRFLOW_UID}:0"
+        echo
+        chown -v -R "${AIRFLOW_UID}:0" /opt/airflow/{logs,dags,plugins,config}
         echo
         echo "Files in shared volumes:"
         echo
-        ls -la /opt/airflow/{logs,dags,plugins,config,include,dbt}
+        ls -la /opt/airflow/{logs,dags,plugins,config}
     environment:
       <<: *airflow-common-env
       _AIRFLOW_DB_MIGRATE: 'true'
