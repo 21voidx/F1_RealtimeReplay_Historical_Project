@@ -10,7 +10,7 @@ class F1DataIngestion:
 
     def __init__(self, snowpark_session: Session):
         self.session = snowpark_session
-        self.schema = 'HITESH'
+        self.schema = 'dbt_schema'
         self.execution_date = None
 
     def _make_request(self, endpoint: str, params: dict = None) -> List[Dict]:

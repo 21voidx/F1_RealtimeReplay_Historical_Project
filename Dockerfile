@@ -1,10 +1,14 @@
+# Dockerfile
 FROM apache/airflow:3.0.6-python3.12
 
-COPY requirements.txt /requirements.txt
+# Copy requirements untuk airflow (jika ada)
+COPY requirements.txt /tmp/requirements.txt
 
-RUN pip install --no-cache-dir \
-    "apache-airflow==${AIRFLOW_VERSION}" \
-    -r /requirements.txt
+# Install uv
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# 1. Install requirements untuk Airflow ke system (menggunakan pip bawaan atau uv)
+RUN uv pip install --no-cache-dir -r /tmp/requirements.txt
 
 
 

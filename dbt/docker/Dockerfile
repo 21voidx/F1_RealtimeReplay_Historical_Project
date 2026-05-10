@@ -21,6 +21,9 @@ RUN dbt deps
 COPY dbt_project/ /app
 
 CMD ["dbt", "--version"]
+
+# tree -d -L 2 dbt/
+
 # docker build
 #     ↓
 # /dbt_packages/          ← packages di-install di sini (di dalam image)
