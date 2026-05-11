@@ -179,7 +179,7 @@ session_dates = sorted(
         "execution_timeout": timedelta(hours=1),
         "email_on_retry": True,
     },
-    start_date=datetime(2024, 12, 7),
+    start_date=datetime(2026, 5, 10),
     schedule="@daily",
     catchup=True,
     max_active_runs=1,
