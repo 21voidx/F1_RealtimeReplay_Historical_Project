@@ -3,5 +3,6 @@ apache-airflow-providers-snowflake==6.4.0
 apache-airflow-providers-docker==4.4.2
 apache-airflow-providers-common-sql
 snowflake-connector-python[pandas]
+snowflake-snowpark-python[pandas]
 requests==2.32.5
 python-dotenv
