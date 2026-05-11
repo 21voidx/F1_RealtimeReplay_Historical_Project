@@ -92,7 +92,7 @@ DOCKER_COMMON = dict(
     image=DBT_IMAGE,
     auto_remove="force",
     mount_tmp_dir=False,
-    network_mode=os.getenv("DBT_DOCKER_NETWORK_MODE", "bridge"),
+    network_mode=os.getenv("DBT_DOCKER_NETWORK_MODE", "host"),
     environment=get_dbt_environment(),
     mounts=DBT_MOUNTS,
 )
