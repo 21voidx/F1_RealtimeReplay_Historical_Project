@@ -169,7 +169,7 @@ session_dates = sorted(
 
 
 @dag(
-    dag_id="f1_data_pipeline_backfill_dockeroperator",
+    dag_id="f1_data_pipeline_backfill_dockeroperator_v2",
     description="F1 Data Ingestion Pipeline - Open Source Airflow + DockerOperator dbt",
     default_args={
         "owner": "Hitesh Kaushik",
