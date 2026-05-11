@@ -12,8 +12,10 @@ from airflow.operators.empty import EmptyOperator
 from airflow.providers.docker.operators.docker import DockerOperator
 from docker.types import Mount
 
-from include.hitesh.scripts.f1_snowflake_etl_2 import F1DataIngestion
-from include.eczachly.snowflake_queries import get_snowpark_session
+# from include.hitesh.scripts.f1_snowflake_etl_2 import F1DataIngestion
+# from include.eczachly.snowflake_queries import get_snowpark_session
+from helper.f1_snowflake_etl_2 import F1DataIngestion
+from helper.snowflake_queries import get_snowpark_session
 
 
 # ─── dbt config mengikuti Dockerfile A ────────────────────────────────────────

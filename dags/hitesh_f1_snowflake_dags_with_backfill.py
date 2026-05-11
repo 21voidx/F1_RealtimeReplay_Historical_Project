@@ -1,7 +1,6 @@
 # f1_data_pipeline.py
 
 from airflow.decorators import dag, task
-from airflow.utils.dates import datetime
 from datetime import timedelta, timezone
 import logging
 from typing import Dict, List, Any
