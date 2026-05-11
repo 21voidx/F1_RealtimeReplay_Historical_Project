@@ -28,7 +28,7 @@ x-airflow-common:
     context: .
     dockerfile: Dockerfile
     network: host
-  image: f1-airflow:20260511-01
+  image: ghcr.io/21voidx/f1-airflow-cosmos:20260511-01
   environment:
     &airflow-common-env
     AIRFLOW__CORE__EXECUTOR: LocalExecutor
