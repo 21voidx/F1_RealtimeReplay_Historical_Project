@@ -36,7 +36,7 @@ from __future__ import annotations
 import io
 import logging
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import pandas as pd
 import requests
@@ -303,8 +303,10 @@ _LOAD_SQL_TEMPLATES: list[str] = [
     tags=["openf1", "f1", "snowflake", "dbt"],
     doc_md=__doc__,
     default_args={
-        "retries": 1,
-        "retry_delay": 300,
+        "retries": 3,                           # Increase retries
+        "retry_delay": timedelta(seconds=60),   # Start with a 1-minute delay
+        "retry_exponential_backoff": True,      # Back off exponentially (1m, 2m, 4m...)
+        "max_retry_delay": timedelta(minutes=10), # Cap the maximum delay
         "owner": "data-engineering",
     },
 )
@@ -333,10 +335,11 @@ def openf1_session_pipeline() -> None:
             for s in sessions
         ]
         log.info("Ditemukan %d sesi baru: %s", len(active_sessions), active_sessions)
+        log.info("url: %s", url)
         return active_sessions  # Otomatis masuk ke XCom, lalu di-expand()
 
     # ── Task 2 : Extract (Dynamic Task Mapping — 1 worker per session) ───────
-    @task
+    @task(max_active_tis_per_dagrun=1)
     def extract_api_to_s3(session: dict) -> None:
         """
         Menarik semua endpoint untuk SATU session_key yang diterima via .expand().
