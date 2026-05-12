@@ -221,7 +221,20 @@ ENDPOINTS: dict[str, dict] = {
 def _get_json(url: str, timeout: int = 120) -> list[dict]:
     log.debug("GET %s", url)
     resp = requests.get(url, timeout=timeout)
-    resp.raise_for_status()
+    
+    try:
+        resp.raise_for_status()
+    except requests.exceptions.HTTPError as e:
+        # Jika API merespons 404 (Not Found), artinya data untuk 
+        # endpoint pada sesi ini memang kosong di database OpenF1.
+        if resp.status_code == 404:
+            log.warning("Data tidak ditemukan (404) untuk %s. Mengembalikan array kosong.", url)
+            return []
+            
+        # Jika menerima error lain (seperti 429 Too Many Requests atau 5xx Server Error),
+        # tetap raise exception agar mekanisme retry & backoff Airflow Anda tetap terpicu.
+        raise e
+        
     return resp.json()
 
 
