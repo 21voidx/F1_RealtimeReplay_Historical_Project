@@ -5,12 +5,13 @@ from typing import Dict, List, Any, Optional
 from snowflake.snowpark import Session
 from datetime import datetime, timedelta
 import time
+import os
 class F1DataIngestion:
     BASE_URL = "https://api.openf1.org/v1"
 
     def __init__(self, snowpark_session: Session):
         self.session = snowpark_session
-        self.schema = 'dbt_schema'
+        self.schema = os.getenv("SNOWFLAKE_SCHEMA", "dbt_schema")
         self.execution_date = None
 
     def _make_request(self, endpoint: str, params: dict = None) -> List[Dict]:

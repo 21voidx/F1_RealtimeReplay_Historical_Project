@@ -7,4 +7,4 @@ SELECT
     throttle,
     brake,
     drs
-FROM {{ source('HITESH', 'F1_CAR_DATA') }}
+FROM {{ source('F1_API', 'F1_CAR_DATA') }}

@@ -4,4 +4,4 @@ SELECT
     date,
     NULLIF(gap_to_leader, 'None') as gap_to_leader,
     NULLIF(interval, 'None') as gap_to_next
-FROM {{ source('HITESH', 'F1_INTERVALS') }}
+FROM {{ source('F1_API', 'F1_INTERVALS') }}

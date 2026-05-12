@@ -9,6 +9,6 @@ WITH source AS (
         circuit_short_name,
         date_start,
         date_end
-    FROM {{ source('HITESH', 'F1_SESSIONS') }}
+    FROM {{ source('F1_API', 'F1_SESSIONS') }}
 )
 SELECT * FROM source

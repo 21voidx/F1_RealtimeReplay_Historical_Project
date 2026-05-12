@@ -1,5 +1,5 @@
 WITH source AS (
-    SELECT * FROM {{ source('HITESH', 'F1_LAPS') }}
+    SELECT * FROM {{ source('F1_API', 'F1_LAPS') }}
 )
 SELECT
     session_key,

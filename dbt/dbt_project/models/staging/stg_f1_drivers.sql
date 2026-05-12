@@ -10,6 +10,6 @@ WITH source AS (
         team_colour,
         country_code,
         session_key
-    FROM {{ source('HITESH', 'F1_DRIVERS') }}
+    FROM {{ source('F1_API', 'F1_DRIVERS') }}
 )
 SELECT * FROM source

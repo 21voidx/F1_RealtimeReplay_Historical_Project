@@ -1,9 +1,9 @@
 version: 2
 
 sources:
-  - name: HITESH
-    database: DATAEXPERT_STUDENT
-    schema: HITESH
+  - name: F1_API
+    database: "{{ env_var('SNOWFLAKE_DATABASE') }}"
+    schema: "{{ env_var('SNOWFLAKE_SCHEMA') }}"
     tables:
       - name: F1_POSITION
         description: "Driver positions throughout a session"

@@ -7,6 +7,6 @@ WITH source AS (
         circuit_short_name,
         year,
         date_start
-    FROM {{ source('HITESH', 'F1_MEETINGS') }}
+    FROM {{ source('F1_API', 'F1_MEETINGS') }}
 )
 SELECT * FROM source

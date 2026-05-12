@@ -30,7 +30,7 @@ clean-targets:         # directories to be removed by `dbt clean`
 # directory as views. These settings can be overridden in the individual model
 # files using the `{{ config(...) }}` macro.
 models:
-  formuala_one:
-      materialized: table
-      staging:
-        materialized: view
+  f1_pipeline:
+    +materialized: table
+    staging:
+      +materialized: view

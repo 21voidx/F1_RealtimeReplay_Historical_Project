@@ -1,2 +1,2 @@
-Select * from
-F1_Weather
+SELECT *
+FROM {{ source('F1_API', 'F1_WEATHER') }}
