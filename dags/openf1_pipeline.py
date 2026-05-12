@@ -258,7 +258,7 @@ _LOAD_SQL_TEMPLATES: list[str] = [
 @dag(
     dag_id="openf1_session_pipeline",
     description="OpenF1 API → S3 → Snowflake → dbt (Event-driven, partitioned by session)",
-    schedule="@hourly",                     # Berjalan setiap jam untuk mengecek jadwal balapan
+    schedule="@monthly",                     # Berjalan setiap jam untuk mengecek jadwal balapan
     start_date=datetime(2024, 1, 1),
     catchup=False,
     max_active_runs=1,
