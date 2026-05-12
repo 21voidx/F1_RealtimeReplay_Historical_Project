@@ -296,7 +296,7 @@ _LOAD_SQL_TEMPLATES: list[str] = [
 @dag(
     dag_id="openf1_session_pipeline_v2",
     description="OpenF1 API → S3 (Parquet) → Snowflake → dbt (Event-driven, partitioned by session)",
-    schedule=CronDataIntervalTimetable("30 22 * * *", timezone="UTC"),  # Setiap hari pukul 22:30 UTC (sesuaikan dengan jadwal balapan)
+    schedule=CronDataIntervalTimetable("0 0 1 * *", timezone="UTC"),  # Berjalan setiap tanggal 1 jam 00:00 UTC untuk mengecek jadwal balapan bulan sebelumnya
     start_date=datetime(2024, 1, 1),
     catchup=True,
     max_active_runs=1,
