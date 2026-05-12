@@ -44,6 +44,7 @@ from airflow.sdk import dag, task
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
 from airflow.providers.common.sql.operators.sql import SQLExecuteQueryOperator
 from airflow.providers.docker.operators.docker import DockerOperator
+from airflow.timetables.interval import CronDataIntervalTimetable
 from docker.types import Mount
 
 log = logging.getLogger(__name__)
@@ -295,7 +296,7 @@ _LOAD_SQL_TEMPLATES: list[str] = [
 @dag(
     dag_id="openf1_session_pipeline_v2",
     description="OpenF1 API → S3 (Parquet) → Snowflake → dbt (Event-driven, partitioned by session)",
-    schedule="@monthly",
+    schedule=CronDataIntervalTimetable("30 22 * * *", timezone="UTC"),  # Setiap hari pukul 22:30 UTC (sesuaikan dengan jadwal balapan)
     start_date=datetime(2024, 1, 1),
     catchup=True,
     max_active_runs=1,
