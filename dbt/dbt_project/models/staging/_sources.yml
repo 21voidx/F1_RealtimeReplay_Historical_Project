@@ -46,7 +46,7 @@ sources:
             tests:
               - not_null
               - relationships:
-                  to: source('HITESH', 'F1_DRIVERS')
+                  to: source('F1_API', 'F1_DRIVERS')
                   field: driver_number
 
           - name: drs
@@ -167,7 +167,7 @@ sources:
               - not_null:
                   where: "driver_number != 0"
               - relationships:
-                  to: source('HITESH', 'F1_DRIVERS')
+                  to: source('F1_API', 'F1_DRIVERS')
                   field: driver_number
                   where: "driver_number is not null"
 
@@ -199,4 +199,19 @@ sources:
               - range_check:
                   min_value: 0
                   max_value: 28
+      - name: F1_WEATHER
+        description: "Weather data for F1 sessions"
+        columns:
+          - name: session_key
+            tests:
+              - not_null
+          - name: date
+            tests:
+              - not_null
+          - name: air_temperature
+          - name: track_temperature
+          - name: humidity
+          - name: rainfall
+          - name: wind_speed
+          - name: wind_direction
 
