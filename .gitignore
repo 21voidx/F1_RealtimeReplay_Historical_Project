@@ -38,4 +38,4 @@ Makefile
 credentials/service-account.json
 image/
 chatgpt/
-
+setup_snowflake.sql
