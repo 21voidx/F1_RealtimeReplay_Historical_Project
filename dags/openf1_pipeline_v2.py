@@ -338,43 +338,45 @@ def openf1_session_pipeline() -> None:
         log.info("url: %s", url)
         return active_sessions  # Otomatis masuk ke XCom, lalu di-expand()
 
-    # ── Task 2 : Extract (Dynamic Task Mapping — 1 worker per session) ───────
+# ── Task 2 : Extract (Dynamic Task Mapping — 1 worker per session) ───────
     @task(max_active_tis_per_dagrun=1)
     def extract_api_to_s3(session: dict) -> None:
-        """
-        Menarik semua endpoint untuk SATU session_key yang diterima via .expand().
-
-        Dengan Dynamic Task Mapping, Airflow akan membuat instance task yang
-        terpisah untuk setiap sesi sehingga setiap worker hanya memproses
-        satu sesi dan RAM tidak menumpuk di satu titik.
-
-        Memory discipline:
-          • Setiap response API langsung dikonversi ke Parquet bytes dan di-upload.
-          • `data` dan bytes di-del dari memori sebelum lanjut ke endpoint berikutnya.
-          • Jeda API_SLEEP_SECONDS detik antar-request agar tidak diblokir OpenF1.
-        """
         sk = session["session_key"]
         mk = session["meeting_key"]
 
         s3 = S3Hook(aws_conn_id=AWS_CONN_ID)
 
+        # 1. Ambil daftar pembalap terlebih dahulu untuk paginasi endpoint berat
+        time.sleep(API_SLEEP_SECONDS)
+        drivers_url = f"{OPENF1_BASE}/drivers?session_key={sk}"
+        drivers_data = _get_json(drivers_url)
+        driver_numbers = list({d.get("driver_number") for d in drivers_data if d.get("driver_number") is not None})
+
         for idx, endpoint in enumerate(ENDPOINTS.keys()):
-            # ── Jeda API: tambahkan sleep sebelum setiap request ──────────────
-            # Jeda diterapkan pada semua endpoint (termasuk yang pertama) agar
-            # antar-sesi yang berjalan paralel tidak membanjiri server sekaligus.
-            time.sleep(API_SLEEP_SECONDS)
-
-            # ── Fetch ─────────────────────────────────────────────────────────
-            if endpoint == "meetings":
+            
+            # 2. Fetch Data (Penanganan khusus untuk endpoint dengan payload masif)
+            if endpoint in ["car_data", "location"]:
+                # Wajib diloop per driver agar tidak terkena 422 Payload Too Large
+                data = []
+                for driver_no in driver_numbers:
+                    time.sleep(API_SLEEP_SECONDS)
+                    url = f"{OPENF1_BASE}/{endpoint}?session_key={sk}&driver_number={driver_no}"
+                    data.extend(_get_json(url))
+                    
+            elif endpoint == "meetings":
+                time.sleep(API_SLEEP_SECONDS)
                 url = f"{OPENF1_BASE}/meetings?meeting_key={mk}"
+                data = _get_json(url)
+                
             else:
+                # intervals dan position aman ditarik hanya dengan session_key
+                time.sleep(API_SLEEP_SECONDS)
                 url = f"{OPENF1_BASE}/{endpoint}?session_key={sk}"
+                data = _get_json(url)
 
-            data = _get_json(url)
-
-            # ── JSON → Parquet (in-memory, tanpa json.dumps) ──────────────────
+            # ── JSON → Parquet ────────────────────────────────────────────────
             parquet_bytes = _to_parquet_bytes(data)
-            del data  # Bebaskan list of dicts dari memori segera
+            del data 
 
             # ── Upload ke S3 ──────────────────────────────────────────────────
             s3_key = f"{S3_ROOT}/{endpoint}/meeting_key={mk}/session_key={sk}/data.parquet"
@@ -382,9 +384,9 @@ def openf1_session_pipeline() -> None:
                 bytes_data=parquet_bytes,
                 key=s3_key,
                 bucket_name=S3_BUCKET,
-                replace=True,  # Idempotent S3 overwrite
+                replace=True,  
             )
-            del parquet_bytes  # Bebaskan bytes dari memori setelah upload selesai
+            del parquet_bytes 
 
             log.info(
                 "[%s] session_key=%s tersimpan → s3://%s/%s",
