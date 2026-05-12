@@ -238,18 +238,54 @@ def _get_json(url: str, timeout: int = 120) -> list[dict]:
     return resp.json()
 
 
-def _to_parquet_bytes(data: list[dict]) -> bytes:
+def _to_parquet_bytes(data: list[dict], endpoint: str) -> bytes:
     """
-    Mengonversi list of dicts ke bytes Parquet via pandas.
-    Mengembalikan Parquet kosong (header saja) jika data = [].
+    Mengonversi list of dicts ke bytes Parquet via pandas
+    dengan DYNAMIC SCHEMA ENFORCEMENT berdasarkan dictionary ENDPOINTS.
     """
     df = pd.DataFrame(data) if data else pd.DataFrame()
+
+    if not df.empty:
+        # 1. Bangun mapping tipe data (Snowflake -> Pandas) secara dinamis
+        schema_mapping = {}
+        
+        for col_name, sql_expr in ENDPOINTS[endpoint]["columns"].items():
+            # Skip kolom jika tidak dikembalikan oleh API pada respons kali ini
+            if col_name not in df.columns:
+                continue 
+            
+            # Ekstrak tipe data dari string (contoh: "$1:gap_to_leader::VARCHAR" -> "VARCHAR")
+            snow_type = sql_expr.split("::")[-1].upper()
+            
+            # Petakan ke Nullable Types milik Pandas yang aman terhadap NaN/Null
+            if snow_type == "VARCHAR":
+                schema_mapping[col_name] = "string"
+            elif snow_type == "INTEGER":
+                schema_mapping[col_name] = "Int64"   # Wajib huruf besar 'I'
+            elif snow_type == "FLOAT":
+                schema_mapping[col_name] = "Float64" # Wajib huruf besar 'F'
+            elif snow_type == "BOOLEAN":
+                schema_mapping[col_name] = "boolean" # Wajib huruf kecil
+            elif snow_type == "TIMESTAMP_NTZ":
+                # Biarkan timestamp sebagai string di Parquet, 
+                # Snowflake via COPY INTO sangat handal dalam mem-parsing string ISO ke TIMESTAMP
+                schema_mapping[col_name] = "string" 
+
+        # 2. Terapkan (cast) tipe data ke DataFrame sebelum diubah ke Parquet
+        try:
+            df = df.astype(schema_mapping)
+        except Exception as e:
+            log.error("Gagal enforce schema pada endpoint %s. Mapping: %s", endpoint, schema_mapping)
+            raise e
+
     buf = io.BytesIO()
     df.to_parquet(buf, index=False, engine="pyarrow")
     parquet_bytes = buf.getvalue()
-    # Bebaskan memori segera setelah serialisasi selesai
+    
+    # Bebaskan memori
     del df
     buf.close()
+    
     return parquet_bytes
 
 
