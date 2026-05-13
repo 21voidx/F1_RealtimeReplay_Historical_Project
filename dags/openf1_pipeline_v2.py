@@ -424,7 +424,7 @@ def openf1_session_pipeline() -> None:
                 data = _get_json(url)
 
             # ── JSON → Parquet ────────────────────────────────────────────────
-            parquet_bytes = _to_parquet_bytes(data)
+            parquet_bytes = _to_parquet_bytes(data, endpoint)
             del data 
 
             # ── Upload ke S3 ──────────────────────────────────────────────────
