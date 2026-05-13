@@ -196,7 +196,7 @@ ENDPOINTS: dict[str, dict] = {
             "lap_number":    "$1:lap_number::INTEGER",
             "pit_duration":  "$1:pit_duration::FLOAT",
             "lane_duration": "$1:lane_duration::FLOAT",
-            "stop_duration":   "$1:stop_number::INTEGER",
+            "stop_duration":   "$1:stop_number::FLOAT",
         },
     },
     "position": {

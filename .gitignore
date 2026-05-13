@@ -39,3 +39,4 @@ credentials/service-account.json
 image/
 chatgpt/
 setup_snowflake.sql
+setup_snowflake_v3_raw.sql
