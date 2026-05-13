@@ -395,7 +395,7 @@ _LOAD_SQL_TEMPLATE: str = "\n".join(
     schedule=CronDataIntervalTimetable("0 0 1 * *", timezone="UTC"),  # Berjalan setiap tanggal 1 jam 00:00 UTC untuk mengecek jadwal balapan bulan sebelumnya
     start_date=datetime(2024, 1, 1),
     catchup=True,
-    max_active_runs=2,
+    max_active_runs=1,
     tags=["openf1", "f1", "snowflake", "dbt"],
     doc_md=__doc__,
     default_args={
