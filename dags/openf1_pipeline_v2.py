@@ -62,8 +62,17 @@ SNOW_DB     = "dbt_db"
 SNOW_SCHEMA = "dbt_schema"
 SNOW_STAGE  = f"{SNOW_DB}.{SNOW_SCHEMA}.openf1_s3_stage"
 
-# ── dbt Docker image ──────────────────────────────────────────────────────────
+# ── dbt Docker image + host bind mounts ──────────────────────────────────────
 DBT_IMAGE = "f1-dbt-snowflake:1.0"
+
+# Path ini dibaca oleh Docker daemon di host, bukan dari filesystem container Airflow.
+# Pastikan kedua path ini ada di mesin yang menjalankan Docker daemon.
+DBT_PROJECT_HOST_PATH = "/home/void/F1_RealtimeReplay_Historical_Project/dbt/dbt_project"
+DBT_PROFILES_HOST_PATH = "/home/void/F1_RealtimeReplay_Historical_Project/dbt/dbt_profiles"
+
+DBT_PROJECT_CONTAINER_PATH = "/app"
+DBT_PROFILES_CONTAINER_PATH = "/root/.dbt"
+
 DBT_ENV: dict[str, str] = {
     "SNOWFLAKE_ACCOUNT":   "{{ var.value.SNOWFLAKE_ACCOUNT }}",
     "SNOWFLAKE_USER":      "{{ var.value.SNOWFLAKE_USER }}",
@@ -72,6 +81,8 @@ DBT_ENV: dict[str, str] = {
     "SNOWFLAKE_DATABASE":  SNOW_DB,
     "SNOWFLAKE_WAREHOUSE": "dbt_wh",
     "SNOWFLAKE_SCHEMA":    SNOW_SCHEMA,
+    "DBT_PROFILES_DIR":    DBT_PROFILES_CONTAINER_PATH,
+    "DBT_PROJECT_DIR":     DBT_PROJECT_CONTAINER_PATH,
 }
 
 OPENF1_BASE = "https://api.openf1.org/v1"
@@ -453,24 +464,50 @@ def openf1_session_pipeline() -> None:
 
     # ── Task 4 : dbt ─────────────────────────────────────────────────────────
     def _dbt_task(task_id: str, select: str) -> DockerOperator:
+        # dbt project dan profiles di-bind mount dari host agar perubahan file lokal
+        # langsung terbaca tanpa rebuild image. dbt deps dijalankan setiap task untuk
+        # memastikan dbt_packages sinkron dengan packages.yml pada project host.
+        dbt_command = (
+            "dbt deps "
+            f"--profiles-dir {DBT_PROFILES_CONTAINER_PATH} "
+            f"--project-dir {DBT_PROJECT_CONTAINER_PATH} && "
+            "dbt run "
+            f"--select {select} "
+            f"--profiles-dir {DBT_PROFILES_CONTAINER_PATH} "
+            f"--project-dir {DBT_PROJECT_CONTAINER_PATH} "
+            "--target dev"
+        )
+
         return DockerOperator(
             task_id=task_id,
             image=DBT_IMAGE,
-            command=[
-                "dbt", "run",
-                "--select",       select,
-                "--profiles-dir", "/root/.dbt",
-                "--project-dir",  "/app",
-                "--target",       "dev",
-            ],
+            command=["bash", "-lc", dbt_command],
             environment=DBT_ENV,
             docker_url="unix://var/run/docker.sock",
             network_mode="bridge",
             auto_remove="force",
             mount_tmp_dir=False,
             mounts=[
-                Mount(target="/app/target", source="dbt_target_vol", type="volume"),
-                Mount(target="/app/logs",   source="dbt_logs_vol",   type="volume"),
+                Mount(
+                    target=DBT_PROJECT_CONTAINER_PATH,
+                    source=DBT_PROJECT_HOST_PATH,
+                    type="bind",
+                ),
+                Mount(
+                    target=DBT_PROFILES_CONTAINER_PATH,
+                    source=DBT_PROFILES_HOST_PATH,
+                    type="bind",
+                ),
+                Mount(
+                    target=f"{DBT_PROJECT_CONTAINER_PATH}/target",
+                    source="dbt_target_vol",
+                    type="volume",
+                ),
+                Mount(
+                    target=f"{DBT_PROJECT_CONTAINER_PATH}/logs",
+                    source="dbt_logs_vol",
+                    type="volume",
+                ),
             ],
         )
 

@@ -1,24 +1,13 @@
 FROM python:3.10-slim
 
-RUN apt-get update && apt-get install -y git && \
+RUN apt-get update && apt-get install -y git bash && \
     rm -rf /var/lib/apt/lists/*
 
-COPY docker/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY docker/requirements.txt /tmp/requirements.txt
 
-COPY dbt_profiles/ /root/.dbt/
+RUN pip install --no-cache-dir -r /tmp/requirements.txt
 
 WORKDIR /app
-COPY dbt_project/packages.yml /app/packages.yml
-COPY dbt_project/dbt_project.yml /app/dbt_project.yml
-
-ENV DBT_PROJECT_DIR=/app
-ENV DBT_PROFILES_DIR=/root/.dbt
-ENV DBT_PACKAGES_INSTALL_PATH=/dbt_packages
-
-RUN dbt deps
-
-COPY dbt_project/ /app
 
 CMD ["dbt", "--version"]
 
