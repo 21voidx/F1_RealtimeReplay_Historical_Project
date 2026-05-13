@@ -104,24 +104,28 @@ ENDPOINTS: dict[str, dict] = {
         "table": "RAW_CAR_DATA",
         "columns": {
             "session_key":   "$1:session_key::INTEGER",
+            "meeting_key":   "$1:meeting_key::INTEGER",
             "driver_number": "$1:driver_number::INTEGER",
             "date":          "$1:date::TIMESTAMP_NTZ",
             "rpm":           "$1:rpm::INTEGER",
             "speed":         "$1:speed::INTEGER",
             "throttle":      "$1:throttle::INTEGER",
             "brake":         "$1:brake::INTEGER",
+            "n_gear":         "$1:n_gear::INTEGER",
             "drs":           "$1:drs::INTEGER",
         },
     },
     "drivers": {
         "table": "RAW_DRIVERS",
         "columns": {
+            "meeting_key":     "$1:meeting_key::INTEGER",
             "driver_number":   "$1:driver_number::INTEGER",
             "broadcast_name":  "$1:broadcast_name::VARCHAR",
             "first_name":      "$1:first_name::VARCHAR",
             "last_name":       "$1:last_name::VARCHAR",
             "full_name":       "$1:full_name::VARCHAR",
             "name_acronym":    "$1:name_acronym::VARCHAR",
+            "headshot_url":     "$1:headshot_url::VARCHAR",
             "team_name":       "$1:team_name::VARCHAR",
             "team_colour":     "$1:team_colour::VARCHAR",
             "country_code":    "$1:country_code::VARCHAR",
@@ -131,6 +135,7 @@ ENDPOINTS: dict[str, dict] = {
     "intervals": {
         "table": "RAW_INTERVALS",
         "columns": {
+            "meeting_key":   "$1:meeting_key::INTEGER",
             "session_key":   "$1:session_key::INTEGER",
             "driver_number": "$1:driver_number::INTEGER",
             "date":          "$1:date::TIMESTAMP_NTZ",
@@ -141,6 +146,7 @@ ENDPOINTS: dict[str, dict] = {
     "laps": {
         "table": "RAW_LAPS",
         "columns": {
+            "meeting_key":       "$1:meeting_key::INTEGER",
             "session_key":       "$1:session_key::INTEGER",
             "driver_number":     "$1:driver_number::INTEGER",
             "date_start":        "$1:date_start::TIMESTAMP_NTZ",
@@ -150,6 +156,12 @@ ENDPOINTS: dict[str, dict] = {
             "duration_sector_1": "$1:duration_sector_1::FLOAT",
             "duration_sector_2": "$1:duration_sector_2::FLOAT",
             "duration_sector_3": "$1:duration_sector_3::FLOAT",
+            "i1_speed":          "$1:i1_speed::INTEGER",
+            "i2_speed":          "$1:i2_speed::INTEGER",
+            "segments_sector_1":  "$1:segments_sector_1::VARIANT",
+            "segments_sector_2":  "$1:segments_sector_2::VARIANT",
+            "segments_sector_3":  "$1:segments_sector_3::VARIANT",
+            "st_speed":          "$1:st_speed::INTEGER",
         },
     },
     "meetings": {
@@ -160,19 +172,31 @@ ENDPOINTS: dict[str, dict] = {
             "meeting_official_name": "$1:meeting_official_name::VARCHAR",
             "country_name":          "$1:country_name::VARCHAR",
             "circuit_key":           "$1:circuit_key::INTEGER",
+            "circuit_image":         "$1:circuit_image::VARCHAR",
+            "circuit_info_url":       "$1:circuit_info_url::VARCHAR",
             "circuit_short_name":    "$1:circuit_short_name::VARCHAR",
+            "circuit_type":          "$1:circuit_type::VARCHAR",
+            "circuit_code":          "$1:circuit_code::VARCHAR",
+            "circuit_flag":          "$1:circuit_flag::VARCHAR",
             "year":                  "$1:year::INTEGER",
             "date_start":            "$1:date_start::TIMESTAMP_NTZ",
+            "date_end":              "$1:date_end::TIMESTAMP_NTZ",
+            "gmt_offset":            "$1:gmt_offset::VARCHAR",
+            "is_cancelled":          "$1:is_cancelled::BOOLEAN",
+            "location":             "$1:location::VARCHAR",
         },
     },
     "pit": {
         "table": "RAW_PIT",
         "columns": {
             "session_key":   "$1:session_key::INTEGER",
+            "meeting_key":   "$1:meeting_key::INTEGER",
             "driver_number": "$1:driver_number::INTEGER",
             "date":          "$1:date::TIMESTAMP_NTZ",
             "lap_number":    "$1:lap_number::INTEGER",
             "pit_duration":  "$1:pit_duration::FLOAT",
+            "lane_duration": "$1:lane_duration::FLOAT",
+            "stop_duration":   "$1:stop_number::INTEGER",
         },
     },
     "position": {
@@ -194,14 +218,21 @@ ENDPOINTS: dict[str, dict] = {
             "session_name":       "$1:session_name::VARCHAR",
             "session_type":       "$1:session_type::VARCHAR",
             "year":               "$1:year::INTEGER",
+            "circuit_key":       "$1:circuit_key::INTEGER",
             "circuit_short_name": "$1:circuit_short_name::VARCHAR",
+            "country_code":       "$1:country_code::VARCHAR",
+            "country_name":       "$1:country_name::VARCHAR",
             "date_start":         "$1:date_start::TIMESTAMP_NTZ",
             "date_end":           "$1:date_end::TIMESTAMP_NTZ",
+            "gmt_offset":         "$1:gmt_offset::VARCHAR",
+            "is_cancelled":       "$1:is_cancelled::BOOLEAN",
+            "location":           "$1:location::VARCHAR",
         },
     },
     "stints": {
         "table": "RAW_STINTS",
         "columns": {
+            "meeting_key":       "$1:meeting_key::INTEGER",
             "session_key":       "$1:session_key::INTEGER",
             "driver_number":     "$1:driver_number::INTEGER",
             "stint_number":      "$1:stint_number::INTEGER",
@@ -214,10 +245,12 @@ ENDPOINTS: dict[str, dict] = {
     "weather": {
         "table": "RAW_WEATHER",
         "columns": {
+            "meeting_key":       "$1:meeting_key::INTEGER",
             "session_key":       "$1:session_key::INTEGER",
             "date":              "$1:date::TIMESTAMP_NTZ",
             "air_temperature":   "$1:air_temperature::FLOAT",
             "track_temperature": "$1:track_temperature::FLOAT",
+            "pressure":         "$1:pressure::FLOAT",
             "humidity":          "$1:humidity::FLOAT",
             "rainfall":          "$1:rainfall::BOOLEAN",
             "wind_speed":        "$1:wind_speed::FLOAT",
@@ -282,6 +315,8 @@ def _to_parquet_bytes(data: list[dict], endpoint: str) -> bytes:
                 # Biarkan timestamp sebagai string di Parquet, 
                 # Snowflake via COPY INTO sangat handal dalam mem-parsing string ISO ke TIMESTAMP
                 schema_mapping[col_name] = "string" 
+            elif snow_type in {"VARIANT", "ARRAY", "OBJECT"}:
+                continue
 
         # 2. Terapkan (cast) tipe data ke DataFrame sebelum diubah ke Parquet
         try:
