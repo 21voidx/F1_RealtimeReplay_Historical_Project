@@ -196,7 +196,7 @@ ENDPOINTS: dict[str, dict] = {
             "lap_number":    "$1:lap_number::INTEGER",
             "pit_duration":  "$1:pit_duration::FLOAT",
             "lane_duration": "$1:lane_duration::FLOAT",
-            "stop_duration":   "$1:stop_number::FLOAT",
+            "stop_duration":   "$1:stop_duration::FLOAT",
         },
     },
     "position": {
@@ -395,7 +395,7 @@ _LOAD_SQL_TEMPLATE: str = "\n".join(
     schedule=CronDataIntervalTimetable("0 0 1 * *", timezone="UTC"),  # Berjalan setiap tanggal 1 jam 00:00 UTC untuk mengecek jadwal balapan bulan sebelumnya
     start_date=datetime(2024, 1, 1),
     catchup=True,
-    max_active_runs=1,
+    max_active_runs=2,
     tags=["openf1", "f1", "snowflake", "dbt"],
     doc_md=__doc__,
     default_args={
