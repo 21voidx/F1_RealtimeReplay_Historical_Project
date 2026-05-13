@@ -1,7 +1,7 @@
 """
 openf1_pipeline.py
 ══════════════════════════════════════════════════════════════════════════════
-OpenF1 API  →  S3  →  Snowflake  →  dbt  (Event-driven, partitioned by session)
+OpenF1 API  →  S3  →  Snowflake raw_* tables  →  dbt  (Event-driven, partitioned by session)
 
 Pipeline:
   [check_new_sessions]         @task.short_circuit (Gatekeeper)
@@ -21,7 +21,7 @@ S3 Partition Layout:
 
 Idempotency Strategy:
   • S3        : replace=True (selalu menimpa file partisi sesi yang sama)
-  • Snowflake : DELETE WHERE session_key = {SK} + COPY INTO
+  • Snowflake : DELETE WHERE session_key = {SK} + COPY INTO raw_* tables
                 (Dijalankan dalam satu blok BEGIN..COMMIT secara dinamis via Jinja)
 
 Memory Strategy:
@@ -96,11 +96,12 @@ API_SLEEP_SECONDS = 2
 # berdasarkan identitas event (session_key / meeting_key).
 #
 # Kunci "columns" masih dipakai untuk membangun SQL COPY INTO Snowflake.
+# Kunci "table" sekarang memakai prefix RAW_* agar raw/source layer jelas terpisah dari dbt models.
 # Format file sudah diubah ke PARQUET — ekspresi $1:col::TYPE tetap valid
 # di Snowflake untuk staged Parquet files.
 ENDPOINTS: dict[str, dict] = {
     "car_data": {
-        "table": "F1_CAR_DATA",
+        "table": "RAW_CAR_DATA",
         "columns": {
             "session_key":   "$1:session_key::INTEGER",
             "driver_number": "$1:driver_number::INTEGER",
@@ -113,7 +114,7 @@ ENDPOINTS: dict[str, dict] = {
         },
     },
     "drivers": {
-        "table": "F1_DRIVERS",
+        "table": "RAW_DRIVERS",
         "columns": {
             "driver_number":   "$1:driver_number::INTEGER",
             "broadcast_name":  "$1:broadcast_name::VARCHAR",
@@ -128,7 +129,7 @@ ENDPOINTS: dict[str, dict] = {
         },
     },
     "intervals": {
-        "table": "F1_INTERVALS",
+        "table": "RAW_INTERVALS",
         "columns": {
             "session_key":   "$1:session_key::INTEGER",
             "driver_number": "$1:driver_number::INTEGER",
@@ -138,7 +139,7 @@ ENDPOINTS: dict[str, dict] = {
         },
     },
     "laps": {
-        "table": "F1_LAPS",
+        "table": "RAW_LAPS",
         "columns": {
             "session_key":       "$1:session_key::INTEGER",
             "driver_number":     "$1:driver_number::INTEGER",
@@ -152,7 +153,7 @@ ENDPOINTS: dict[str, dict] = {
         },
     },
     "meetings": {
-        "table": "F1_MEETINGS",
+        "table": "RAW_MEETINGS",
         "columns": {
             "meeting_key":           "$1:meeting_key::INTEGER",
             "meeting_name":          "$1:meeting_name::VARCHAR",
@@ -165,7 +166,7 @@ ENDPOINTS: dict[str, dict] = {
         },
     },
     "pit": {
-        "table": "F1_PIT",
+        "table": "RAW_PIT",
         "columns": {
             "session_key":   "$1:session_key::INTEGER",
             "driver_number": "$1:driver_number::INTEGER",
@@ -175,7 +176,7 @@ ENDPOINTS: dict[str, dict] = {
         },
     },
     "position": {
-        "table": "F1_POSITION",
+        "table": "RAW_POSITION",
         "columns": {
             "session_key":   "$1:session_key::INTEGER",
             "driver_number": "$1:driver_number::INTEGER",
@@ -185,7 +186,7 @@ ENDPOINTS: dict[str, dict] = {
         },
     },
     "sessions": {
-        "table": "F1_SESSIONS",
+        "table": "RAW_SESSIONS",
         "columns": {
             "session_key":        "$1:session_key::INTEGER",
             "meeting_key":        "$1:meeting_key::INTEGER",
@@ -199,7 +200,7 @@ ENDPOINTS: dict[str, dict] = {
         },
     },
     "stints": {
-        "table": "F1_STINTS",
+        "table": "RAW_STINTS",
         "columns": {
             "session_key":       "$1:session_key::INTEGER",
             "driver_number":     "$1:driver_number::INTEGER",
@@ -211,7 +212,7 @@ ENDPOINTS: dict[str, dict] = {
         },
     },
     "weather": {
-        "table": "F1_WEATHER",
+        "table": "RAW_WEATHER",
         "columns": {
             "session_key":       "$1:session_key::INTEGER",
             "date":              "$1:date::TIMESTAMP_NTZ",
@@ -354,7 +355,7 @@ _LOAD_SQL_TEMPLATE: str = "\n".join(
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @dag(
-    dag_id="openf1_session_pipeline_v2",
+    dag_id="openf1_session_pipeline_v3",
     description="OpenF1 API → S3 (Parquet) → Snowflake → dbt (Event-driven, partitioned by session)",
     schedule=CronDataIntervalTimetable("0 0 1 * *", timezone="UTC"),  # Berjalan setiap tanggal 1 jam 00:00 UTC untuk mengecek jadwal balapan bulan sebelumnya
     start_date=datetime(2024, 1, 1),
@@ -462,58 +463,58 @@ def openf1_session_pipeline() -> None:
         return_last=False,
     )
 
-    # ── Task 4 : dbt ─────────────────────────────────────────────────────────
-    def _dbt_task(task_id: str, select: str) -> DockerOperator:
-        # dbt project dan profiles di-bind mount dari host agar perubahan file lokal
-        # langsung terbaca tanpa rebuild image. dbt deps dijalankan setiap task untuk
-        # memastikan dbt_packages sinkron dengan packages.yml pada project host.
-        dbt_command = (
-            "dbt deps "
-            f"--profiles-dir {DBT_PROFILES_CONTAINER_PATH} "
-            f"--project-dir {DBT_PROJECT_CONTAINER_PATH} && "
-            "dbt run "
-            f"--select {select} "
-            f"--profiles-dir {DBT_PROFILES_CONTAINER_PATH} "
-            f"--project-dir {DBT_PROJECT_CONTAINER_PATH} "
-            "--target dev"
-        )
+    # # ── Task 4 : dbt ─────────────────────────────────────────────────────────
+    # def _dbt_task(task_id: str, select: str) -> DockerOperator:
+    #     # dbt project dan profiles di-bind mount dari host agar perubahan file lokal
+    #     # langsung terbaca tanpa rebuild image. dbt deps dijalankan setiap task untuk
+    #     # memastikan dbt_packages sinkron dengan packages.yml pada project host.
+    #     dbt_command = (
+    #         "dbt deps "
+    #         f"--profiles-dir {DBT_PROFILES_CONTAINER_PATH} "
+    #         f"--project-dir {DBT_PROJECT_CONTAINER_PATH} && "
+    #         "dbt run "
+    #         f"--select {select} "
+    #         f"--profiles-dir {DBT_PROFILES_CONTAINER_PATH} "
+    #         f"--project-dir {DBT_PROJECT_CONTAINER_PATH} "
+    #         "--target dev"
+    #     )
 
-        return DockerOperator(
-            task_id=task_id,
-            image=DBT_IMAGE,
-            command=["bash", "-lc", dbt_command],
-            environment=DBT_ENV,
-            docker_url="unix://var/run/docker.sock",
-            network_mode="bridge",
-            auto_remove="force",
-            mount_tmp_dir=False,
-            mounts=[
-                Mount(
-                    target=DBT_PROJECT_CONTAINER_PATH,
-                    source=DBT_PROJECT_HOST_PATH,
-                    type="bind",
-                ),
-                Mount(
-                    target=DBT_PROFILES_CONTAINER_PATH,
-                    source=DBT_PROFILES_HOST_PATH,
-                    type="bind",
-                ),
-                Mount(
-                    target=f"{DBT_PROJECT_CONTAINER_PATH}/target",
-                    source="dbt_target_vol",
-                    type="volume",
-                ),
-                Mount(
-                    target=f"{DBT_PROJECT_CONTAINER_PATH}/logs",
-                    source="dbt_logs_vol",
-                    type="volume",
-                ),
-            ],
-        )
+    #     return DockerOperator(
+    #         task_id=task_id,
+    #         image=DBT_IMAGE,
+    #         command=["bash", "-lc", dbt_command],
+    #         environment=DBT_ENV,
+    #         docker_url="unix://var/run/docker.sock",
+    #         network_mode="bridge",
+    #         auto_remove="force",
+    #         mount_tmp_dir=False,
+    #         mounts=[
+    #             Mount(
+    #                 target=DBT_PROJECT_CONTAINER_PATH,
+    #                 source=DBT_PROJECT_HOST_PATH,
+    #                 type="bind",
+    #             ),
+    #             Mount(
+    #                 target=DBT_PROFILES_CONTAINER_PATH,
+    #                 source=DBT_PROFILES_HOST_PATH,
+    #                 type="bind",
+    #             ),
+    #             Mount(
+    #                 target=f"{DBT_PROJECT_CONTAINER_PATH}/target",
+    #                 source="dbt_target_vol",
+    #                 type="volume",
+    #             ),
+    #             Mount(
+    #                 target=f"{DBT_PROJECT_CONTAINER_PATH}/logs",
+    #                 source="dbt_logs_vol",
+    #                 type="volume",
+    #             ),
+    #         ],
+    #     )
 
-    dbt_staging      = _dbt_task("dbt_run_staging",      "staging")
-    dbt_intermediate = _dbt_task("dbt_run_intermediate", "intermediate")
-    dbt_marts        = _dbt_task("dbt_run_marts",         "marts")
+    # dbt_staging      = _dbt_task("dbt_run_staging",      "staging")
+    # dbt_intermediate = _dbt_task("dbt_run_intermediate", "intermediate")
+    # dbt_marts        = _dbt_task("dbt_run_marts",         "marts")
 
     # ── Wiring ───────────────────────────────────────────────────────────────
     # check_new_sessions() mengembalikan list[dict] → menjadi input .expand().
@@ -524,7 +525,7 @@ def openf1_session_pipeline() -> None:
     # Dynamic Task Mapping: ganti .expand() dari loop tunggal menjadi N task paralel
     extract_tasks = extract_api_to_s3.expand(session=active_sessions)
 
-    extract_tasks >> load >> dbt_staging >> dbt_intermediate >> dbt_marts
+    extract_tasks >> load # >> dbt_staging >> dbt_intermediate >> dbt_marts
 
 
 openf1_session_pipeline()
