@@ -334,9 +334,9 @@ def _build_jinja_sql_template(endpoint: str, cfg: dict) -> str:
 
 
 # Build query templates saat parse time DAG
-_LOAD_SQL_TEMPLATES: list[str] = [
+_LOAD_SQL_TEMPLATE: str = "\n".join(
     _build_jinja_sql_template(ep, cfg) for ep, cfg in ENDPOINTS.items()
-]
+)
 
 # ═══════════════════════════════════════════════════════════════════════════════
 #  DAG
@@ -446,7 +446,7 @@ def openf1_session_pipeline() -> None:
     load = SQLExecuteQueryOperator(
         task_id="load_s3_to_snowflake",
         conn_id=SNOW_CONN_ID,
-        sql=_LOAD_SQL_TEMPLATES,
+        sql=_LOAD_SQL_TEMPLATE,
         split_statements=True,  # Diperlukan karena terdapat blok BEGIN..COMMIT
         return_last=False,
     )
