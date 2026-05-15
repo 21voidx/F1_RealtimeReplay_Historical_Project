@@ -1,0 +1,20 @@
+version: 2
+
+exposures:
+  - name: openf1_historical_grafana_cloud_dashboard
+    label: OpenF1 Historical Dashboard - Grafana Cloud
+    type: dashboard
+    maturity: high
+    url: "https://<your-stack>.grafana.net/d/openf1-historical-cloud"
+    description: Historical OpenF1 dashboard in Grafana Cloud backed by Snowflake mart tables.
+    depends_on:
+      - ref('mart_openf1__session_summary')
+      - ref('fct_openf1__driver_session_summary')
+      - ref('fct_openf1__race_leaderboard')
+      - ref('fct_openf1__car_telemetry_1min')
+      - ref('fct_openf1__position_timeseries')
+      - ref('fct_openf1__weather_5min')
+      - ref('fct_openf1__tyre_stint_performance')
+    owner:
+      name: Data Engineering
+      email: data@example.com

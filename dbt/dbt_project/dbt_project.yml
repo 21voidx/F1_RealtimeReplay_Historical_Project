@@ -1,16 +1,9 @@
+name: f1_pipeline
+version: 2.0.0
+config-version: 2
+profile: f1_pipeline
+require-dbt-version: [">=1.11.0", "<1.12.0"]
 
-# Name your project! Project names should contain only lowercase characters
-# and underscores. A good package name should reflect your organization's
-# name or the intended use of these models
-name: 'f1_pipeline'
-version: '1.0.0'
-
-# This setting configures which "profile" dbt uses for this project.
-profile: 'f1_pipeline'
-
-# These configurations specify where dbt should look for different types of files.
-# The `model-paths` config, for example, states that models in this project can be
-# found in the "models/" directory. You probably won't need to change these!
 model-paths: ["models"]
 analysis-paths: ["analyses"]
 test-paths: ["tests"]
@@ -18,19 +11,46 @@ seed-paths: ["seeds"]
 macro-paths: ["macros"]
 snapshot-paths: ["snapshots"]
 
-clean-targets:         # directories to be removed by `dbt clean`
-  - "target"
-  - "dbt_packages"
+target-path: target
+clean-targets:
+  - target
+  - dbt_packages
+  - logs
 
+vars:
+  incremental_lookback_days: 3
+  telemetry_rollup_minutes: 1
+  weather_rollup_minutes: 5
+  query_tag_prefix: openf1_dbt
 
-# Configuring models
-# Full documentation: https://docs.getdbt.com/docs/configuring-models
-
-# In this example config, we tell dbt to build all models in the example/
-# directory as views. These settings can be overridden in the individual model
-# files using the `{{ config(...) }}` macro.
 models:
   f1_pipeline:
-    +materialized: table
+    +persist_docs:
+      relation: true
+      columns: true
+    +on_schema_change: sync_all_columns
     staging:
+      +schema: stg
       +materialized: view
+      +tags: ["staging"]
+      +query_tag: openf1_staging
+    intermediate:
+      +schema: int
+      +materialized: view
+      +tags: ["intermediate"]
+      +query_tag: openf1_intermediate
+    marts:
+      +schema: mart
+      +materialized: table
+      +transient: false
+      +tags: ["mart", "gold"]
+      +query_tag: openf1_mart
+
+seeds:
+  f1_pipeline:
+    +schema: seed
+    +quote_columns: false
+
+tests:
+  +store_failures: true
+  +schema: dq

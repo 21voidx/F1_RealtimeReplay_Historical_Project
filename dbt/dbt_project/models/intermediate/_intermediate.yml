@@ -1,0 +1,25 @@
+version: 2
+
+models:
+  - name: int_openf1__latest_positions
+    description: Latest known position per session and driver.
+    columns:
+      - name: session_key
+        data_tests: [not_null]
+      - name: driver_number
+        data_tests: [not_null]
+
+  - name: int_openf1__latest_intervals
+    description: Latest known gap and interval per session and driver.
+
+  - name: int_openf1__lap_rollup_by_driver_session
+    description: Lap aggregates by session and driver.
+    columns:
+      - name: best_lap_seconds
+        data_tests: [non_negative]
+
+  - name: int_openf1__pit_rollup_by_driver_session
+    description: Pit stop aggregates by session and driver.
+
+  - name: int_openf1__stint_rollup_by_driver_session
+    description: Tyre stint aggregates by session and driver.

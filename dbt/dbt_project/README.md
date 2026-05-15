@@ -1,22 +1,21 @@
-Welcome to your new dbt project!
+# f1_pipeline dbt project
 
-### Using the starter project
+Layering:
 
-Try running the following commands:
-- cd dbt/dbt_project
-- dbt deps --profiles-dir ../dbt_profiles --target dev
-- dbt deps --profiles-dir ../dbt_profiles --target dev
-- dbt run --select tag:gold --profiles-dir ../dbt_profiles --target dev
-- dbt test
-<!-- - dbt run
-- dbt test -->
+- `staging`: clean, cast, rename, deduplicate raw OpenF1 tables.
+- `intermediate`: reusable business logic and rollups.
+- `marts`: dashboard-ready dimensions, facts, and aggregates.
 
-kalau dari root folder
-dbt debug --project-dir ./dbt/dbt_project --profiles-dir ./dbt/dbt_profiles --target dev
+Common commands:
 
-### Resources:
-- Learn more about dbt [in the docs](https://docs.getdbt.com/docs/introduction)
-- Check out [Discourse](https://discourse.getdbt.com/) for commonly asked questions and answers
-- Join the [chat](https://community.getdbt.com/) on Slack for live discussions and support
-- Find [dbt events](https://events.getdbt.com) near you
-- Check out [the blog](https://blog.getdbt.com/) for the latest news on dbt's development and best practices
+```bash
+dbt deps
+dbt debug
+dbt build
+dbt build --selector high_volume
+dbt build --selector dashboard
+dbt docs generate
+```
+
+Raw source schema is controlled by `SNOWFLAKE_RAW_SCHEMA`.
+Target schema is controlled by `SNOWFLAKE_SCHEMA`.

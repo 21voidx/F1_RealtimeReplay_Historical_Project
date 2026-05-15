@@ -1,0 +1,27 @@
+selectors:
+  - name: staging
+    description: Build all staging models.
+    definition:
+      method: path
+      value: models/staging
+
+  - name: marts
+    description: Build dashboard-ready mart models.
+    definition:
+      method: path
+      value: models/marts
+
+  - name: high_volume
+    description: Build high-volume incremental models only.
+    definition:
+      method: tag
+      value: high_volume
+
+  - name: dashboard
+    description: Build all models needed by the Grafana dashboard.
+    definition:
+      union:
+        - method: tag
+          value: gold
+        - method: fqn
+          value: mart_openf1__session_summary

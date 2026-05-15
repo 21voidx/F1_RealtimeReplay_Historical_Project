@@ -1,0 +1,133 @@
+version: 2
+
+models:
+  - name: stg_openf1__car_data
+    description: Cleaned and deduplicated high-frequency telemetry. Incremental because this table can be large.
+    columns:
+      - name: car_data_id
+        data_tests: [not_null, unique]
+      - name: timestamp_utc
+        data_tests: [not_null]
+      - name: session_key
+        data_tests: [not_null]
+      - name: driver_number
+        data_tests: [not_null]
+      - name: speed
+        data_tests:
+          - accepted_range:
+              min_value: 0
+              max_value: 430
+      - name: throttle
+        data_tests:
+          - accepted_range:
+              min_value: 0
+              max_value: 110
+      - name: brake
+        data_tests:
+          - accepted_range:
+              min_value: 0
+              max_value: 110
+      - name: drs
+        data_tests: [accepted_drs_state]
+
+  - name: stg_openf1__drivers
+    description: One driver row per session and driver number.
+    columns:
+      - name: session_driver_id
+        data_tests: [not_null, unique]
+      - name: session_key
+        data_tests: [not_null]
+      - name: driver_number
+        data_tests: [not_null]
+      - name: full_name
+        data_tests: [not_null]
+
+  - name: stg_openf1__intervals
+    description: Cleaned interval data with numeric gap fields.
+    columns:
+      - name: interval_id
+        data_tests: [not_null, unique]
+      - name: timestamp_utc
+        data_tests: [not_null]
+
+  - name: stg_openf1__laps
+    description: Cleaned lap timing data.
+    columns:
+      - name: lap_id
+        data_tests: [not_null, unique]
+      - name: session_key
+        data_tests: [not_null]
+      - name: driver_number
+        data_tests: [not_null]
+      - name: lap_number
+        data_tests: [not_null]
+      - name: lap_duration_seconds
+        data_tests: [non_negative]
+
+  - name: stg_openf1__meetings
+    description: Cleaned race weekend metadata.
+    columns:
+      - name: meeting_key
+        data_tests: [not_null, unique]
+      - name: meeting_name
+        data_tests: [not_null]
+      - name: season_year
+        data_tests: [not_null]
+
+  - name: stg_openf1__pit
+    description: Cleaned pit stop records.
+    columns:
+      - name: pit_stop_id
+        data_tests: [not_null, unique]
+      - name: pit_at
+        data_tests: [not_null]
+      - name: pit_duration_seconds
+        data_tests: [non_negative]
+
+  - name: stg_openf1__position
+    description: Cleaned and deduplicated driver position snapshots.
+    columns:
+      - name: position_id
+        data_tests: [not_null, unique]
+      - name: timestamp_utc
+        data_tests: [not_null]
+      - name: position
+        data_tests:
+          - accepted_range:
+              min_value: 1
+              max_value: 30
+
+  - name: stg_openf1__sessions
+    description: Cleaned session metadata.
+    columns:
+      - name: session_key
+        data_tests: [not_null, unique]
+      - name: meeting_key
+        data_tests: [not_null]
+      - name: session_type
+        data_tests: [not_null]
+
+  - name: stg_openf1__stints
+    description: Cleaned tyre stint data.
+    columns:
+      - name: stint_id
+        data_tests: [not_null, unique]
+      - name: compound
+        data_tests:
+          - accepted_values:
+              values: ['SOFT', 'MEDIUM', 'HARD', 'INTERMEDIATE', 'WET']
+              config:
+                where: "compound is not null"
+
+  - name: stg_openf1__weather
+    description: Cleaned weather records.
+    columns:
+      - name: weather_id
+        data_tests: [not_null, unique]
+      - name: timestamp_utc
+        data_tests: [not_null]
+      - name: humidity
+        data_tests:
+          - accepted_range:
+              min_value: 0
+              max_value: 100
