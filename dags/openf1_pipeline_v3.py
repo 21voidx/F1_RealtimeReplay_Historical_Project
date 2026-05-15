@@ -221,6 +221,7 @@ ENDPOINTS: dict[str, dict] = {
             "circuit_key":       "$1:circuit_key::INTEGER",
             "circuit_short_name": "$1:circuit_short_name::VARCHAR",
             "country_code":       "$1:country_code::VARCHAR",
+            "country_name":       "$1:country_name::VARCHAR",
             "date_start":         "$1:date_start::TIMESTAMP_NTZ",
             "date_end":           "$1:date_end::TIMESTAMP_NTZ",
             "gmt_offset":         "$1:gmt_offset::VARCHAR",
@@ -262,108 +263,24 @@ ENDPOINTS: dict[str, dict] = {
 #  Helpers
 # ═══════════════════════════════════════════════════════════════════════════════
 
-class PayloadTooLargeError(Exception):
-    """Raised when OpenF1 returns 422 — payload too large; caller must chunk further."""
-
-
 def _get_json(url: str, timeout: int = 120) -> list[dict]:
     log.debug("GET %s", url)
     resp = requests.get(url, timeout=timeout)
-
+    
     try:
         resp.raise_for_status()
     except requests.exceptions.HTTPError as e:
+        # Jika API merespons 404 (Not Found), artinya data untuk 
+        # endpoint pada sesi ini memang kosong di database OpenF1.
         if resp.status_code == 404:
-            # Data for this endpoint / session genuinely absent in OpenF1.
             log.warning("Data tidak ditemukan (404) untuk %s. Mengembalikan array kosong.", url)
             return []
-
-        if resp.status_code == 422:
-            # OpenF1 refuses to serve a response this large.
-            # Callers that support time-chunking should catch PayloadTooLargeError
-            # and retry with a narrower date window.
-            raise PayloadTooLargeError(
-                f"422 Payload Too Large — query window terlalu besar: {url}"
-            ) from e
-
-        # 429 / 5xx → biarkan Airflow retry & backoff menangani.
+            
+        # Jika menerima error lain (seperti 429 Too Many Requests atau 5xx Server Error),
+        # tetap raise exception agar mekanisme retry & backoff Airflow Anda tetap terpicu.
         raise e
-
+        
     return resp.json()
-
-
-# ── Time-chunking constants ───────────────────────────────────────────────────
-# Lebar jendela waktu (menit) untuk paginasi endpoint bervolume besar.
-# Nilai 15 menit aman untuk semua jenis sesi (Race, Qualifying, Sprint).
-# Turunkan ke 5 menit jika 422 masih terjadi (hanya untuk sesi Race yang sangat padat).
-CHUNK_MINUTES = 15
-
-
-def _fetch_chunked(
-    endpoint: str,
-    session_key: int,
-    driver_number: int,
-    date_start: str,
-    date_end: str,
-) -> list[dict]:
-    """
-    Tarik data endpoint berat (car_data, location) dalam jendela CHUNK_MINUTES menit
-    untuk menghindari 422 Payload Too Large dari OpenF1.
-
-    Strategi adaptive:
-      • Coba CHUNK_MINUTES menit lebih dulu.
-      • Jika masih 422, bagi dua jendela dan coba lagi (rekursif satu level).
-    """
-    start_ts = pd.Timestamp(date_start)
-    end_ts   = pd.Timestamp(date_end)
-
-    # Normalisasi tz-aware agar aritmetika aman
-    if start_ts.tzinfo is None:
-        start_ts = start_ts.tz_localize("UTC")
-    else:
-        start_ts = start_ts.tz_convert("UTC")
-
-    if end_ts.tzinfo is None:
-        end_ts = end_ts.tz_localize("UTC")
-    else:
-        end_ts = end_ts.tz_convert("UTC")
-
-    results: list[dict] = []
-    chunk_delta = pd.Timedelta(minutes=CHUNK_MINUTES)
-    chunk_start = start_ts
-
-    while chunk_start < end_ts:
-        chunk_end = min(chunk_start + chunk_delta, end_ts)
-        url = (
-            f"{OPENF1_BASE}/{endpoint}"
-            f"?session_key={session_key}"
-            f"&driver_number={driver_number}"
-            f"&date>={chunk_start.isoformat()}"
-            f"&date<{chunk_end.isoformat()}"
-        )
-        time.sleep(API_SLEEP_SECONDS)
-
-        try:
-            results.extend(_get_json(url))
-        except PayloadTooLargeError:
-            # Jendela masih terlalu besar — bagi dua dan coba lagi
-            mid = chunk_start + (chunk_end - chunk_start) / 2
-            log.warning(
-                "422 pada [%s] driver=%s window %s→%s — membelah jadi dua.",
-                endpoint, driver_number, chunk_start, chunk_end,
-            )
-            results.extend(
-                _fetch_chunked(endpoint, session_key, driver_number,
-                               chunk_start.isoformat(), mid.isoformat())
-            )
-            results.extend(
-                _fetch_chunked(endpoint, session_key, driver_number,
-                               mid.isoformat(), chunk_end.isoformat())
-            )
-
-        chunk_start = chunk_end
-
-    return results
 
 
 def _to_parquet_bytes(data: list[dict], endpoint: str) -> bytes:
@@ -510,14 +427,7 @@ def openf1_session_pipeline() -> None:
             return False  # Menghentikan eksekusi task di bawahnya
 
         active_sessions = [
-            {
-                "meeting_key": s["meeting_key"],
-                "session_key": s["session_key"],
-                # date_start / date_end dipakai oleh extract_api_to_s3
-                # untuk time-chunking endpoint car_data & location.
-                "date_start": s.get("date_start", ""),
-                "date_end":   s.get("date_end",   ""),
-            }
+            {"meeting_key": s["meeting_key"], "session_key": s["session_key"]}
             for s in sessions
         ]
         log.info("Ditemukan %d sesi baru: %s", len(active_sessions), active_sessions)
@@ -542,31 +452,12 @@ def openf1_session_pipeline() -> None:
             
             # 2. Fetch Data (Penanganan khusus untuk endpoint dengan payload masif)
             if endpoint in ["car_data", "location"]:
-                # Harus di-loop per driver DAN per jendela waktu agar tidak
-                # terkena 422 Payload Too Large, bahkan untuk satu driver sekalipun
-                # (misalnya driver_number=1 pada sesi Race yang sangat padat).
-                date_start = session.get("date_start", "")
-                date_end   = session.get("date_end",   "")
-
-                if not date_start or not date_end:
-                    # Fallback: tarik info sesi sekali jika belum tersedia
-                    time.sleep(API_SLEEP_SECONDS)
-                    sess_info = _get_json(f"{OPENF1_BASE}/sessions?session_key={sk}")
-                    if sess_info:
-                        date_start = sess_info[0].get("date_start", "")
-                        date_end   = sess_info[0].get("date_end",   "")
-
+                # Wajib diloop per driver agar tidak terkena 422 Payload Too Large
                 data = []
                 for driver_no in driver_numbers:
-                    if date_start and date_end:
-                        data.extend(
-                            _fetch_chunked(endpoint, sk, driver_no, date_start, date_end)
-                        )
-                    else:
-                        # Fallback terakhir: coba sekali tanpa chunking
-                        time.sleep(API_SLEEP_SECONDS)
-                        url = f"{OPENF1_BASE}/{endpoint}?session_key={sk}&driver_number={driver_no}"
-                        data.extend(_get_json(url))
+                    time.sleep(API_SLEEP_SECONDS)
+                    url = f"{OPENF1_BASE}/{endpoint}?session_key={sk}&driver_number={driver_no}"
+                    data.extend(_get_json(url))
                     
             elif endpoint == "meetings":
                 time.sleep(API_SLEEP_SECONDS)
