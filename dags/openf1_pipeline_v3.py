@@ -37,6 +37,7 @@ import io
 import logging
 import time
 from datetime import datetime, timedelta
+from urllib.parse import urlencode
 
 import pandas as pd
 import requests
@@ -90,6 +91,16 @@ OPENF1_BASE = "https://api.openf1.org/v1"
 # ── API throttle ──────────────────────────────────────────────────────────────
 # Jeda antar-request agar IP home server tidak diblokir oleh OpenF1.
 API_SLEEP_SECONDS = 2
+
+# Endpoint dengan payload besar.
+# car_data adalah telemetry berfrekuensi tinggi ±3.7 Hz, sehingga satu sesi penuh
+# per driver masih dapat terlalu besar untuk satu request API.
+TELEMETRY_ENDPOINTS = {"car_data", "location"}
+
+# Sesuai kebutuhan: rentang waktu sesi dibagi 2 terlebih dahulu.
+# Jika 422 tetap muncul pada salah satu chunk, helper akan split lagi secara rekursif.
+TELEMETRY_TIME_CHUNKS = 2
+TELEMETRY_MAX_SPLIT_DEPTH = 5
 
 # ── Endpoint catalogue ────────────────────────────────────────────────────────
 # Filter berbasis tanggal telah dihapus karena kita menarik data
@@ -263,25 +274,226 @@ ENDPOINTS: dict[str, dict] = {
 #  Helpers
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def _get_json(url: str, timeout: int = 120) -> list[dict]:
-    log.debug("GET %s", url)
-    resp = requests.get(url, timeout=timeout)
-    
+def _get_json(url: str, params: dict | None = None, timeout: int = 120) -> list[dict]:
+    """
+    GET JSON dari OpenF1 API.
+
+    Catatan penting:
+    - Gunakan params agar operator filter seperti date>= dan date< di-encode aman.
+    - Ini mencegah karakter '+' pada timezone ISO 8601 berubah menjadi spasi di URL.
+    """
+    encoded_params = urlencode(params or {}, doseq=True)
+    log.debug("GET %s%s", url, f"?{encoded_params}" if encoded_params else "")
+
+    resp = requests.get(url, params=params, timeout=timeout)
+
     try:
         resp.raise_for_status()
     except requests.exceptions.HTTPError as e:
-        # Jika API merespons 404 (Not Found), artinya data untuk 
+        # Jika API merespons 404 (Not Found), artinya data untuk
         # endpoint pada sesi ini memang kosong di database OpenF1.
         if resp.status_code == 404:
-            log.warning("Data tidak ditemukan (404) untuk %s. Mengembalikan array kosong.", url)
+            log.warning(
+                "Data tidak ditemukan (404) untuk %s. Params=%s. Mengembalikan array kosong.",
+                url,
+                params,
+            )
             return []
-            
-        # Jika menerima error lain (seperti 429 Too Many Requests atau 5xx Server Error),
-        # tetap raise exception agar mekanisme retry & backoff Airflow Anda tetap terpicu.
+
+        # 422 biasanya muncul ketika request terlalu besar.
+        # Untuk endpoint telemetry, pemecahan request ditangani di helper khusus.
+        if resp.status_code == 422:
+            log.error(
+                "OpenF1 menolak request karena payload terlalu besar atau parameter tidak valid. "
+                "URL=%s Params=%s Response=%s",
+                url,
+                params,
+                resp.text[:500],
+            )
+
+        # Error lain seperti 429 atau 5xx tetap raise agar retry Airflow aktif.
         raise e
-        
+
     return resp.json()
 
+
+def _parse_openf1_datetime(value: str | datetime) -> datetime:
+    """
+    Parse datetime OpenF1 dari string ISO 8601 atau objek datetime.
+    OpenF1 umumnya mengirim format seperti 2024-05-26T13:00:00+00:00.
+    """
+    if isinstance(value, datetime):
+        return value
+
+    if not value:
+        raise ValueError("Nilai datetime kosong. date_start/date_end wajib tersedia.")
+
+    # Python <3.11 kadang lebih aman jika 'Z' diganti '+00:00'.
+    return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+
+
+def _format_openf1_datetime(value: datetime) -> str:
+    """
+    Format datetime untuk parameter OpenF1.
+    Microsecond dihapus agar URL lebih bersih dan konsisten.
+    """
+    return value.replace(microsecond=0).isoformat()
+
+
+def _split_time_range(date_start: str | datetime, date_end: str | datetime, chunks: int = 2) -> list[tuple[str, str]]:
+    """
+    Membagi rentang waktu menjadi beberapa chunk half-open: [start, end).
+    Untuk kebutuhan ini default dibagi 2.
+    """
+    start_dt = _parse_openf1_datetime(date_start)
+    end_dt = _parse_openf1_datetime(date_end)
+
+    if end_dt <= start_dt:
+        raise ValueError(f"date_end harus lebih besar dari date_start. date_start={date_start}, date_end={date_end}")
+
+    chunks = max(1, int(chunks))
+    total_seconds = (end_dt - start_dt).total_seconds()
+
+    ranges: list[tuple[str, str]] = []
+    for i in range(chunks):
+        chunk_start = start_dt + timedelta(seconds=(total_seconds * i / chunks))
+        chunk_end = start_dt + timedelta(seconds=(total_seconds * (i + 1) / chunks))
+        ranges.append((_format_openf1_datetime(chunk_start), _format_openf1_datetime(chunk_end)))
+
+    return ranges
+
+
+def _fetch_endpoint_time_chunk(
+    endpoint: str,
+    session_key: int,
+    driver_number: int,
+    date_start: str,
+    date_end: str,
+    split_depth: int = TELEMETRY_MAX_SPLIT_DEPTH,
+) -> list[dict]:
+    """
+    Mengambil satu endpoint telemetry untuk satu driver pada satu rentang waktu.
+
+    Jika OpenF1 tetap mengembalikan 422, chunk dibagi dua lagi secara rekursif.
+    Ini menjaga pipeline tetap selesai untuk sesi yang panjang atau data yang padat.
+    """
+    url = f"{OPENF1_BASE}/{endpoint}"
+    params = {
+        "session_key": session_key,
+        "driver_number": driver_number,
+        "date>=": date_start,
+        "date<": date_end,
+    }
+
+    time.sleep(API_SLEEP_SECONDS)
+
+    try:
+        return _get_json(url, params=params)
+    except requests.exceptions.HTTPError as e:
+        status_code = e.response.status_code if e.response is not None else None
+
+        if status_code != 422 or split_depth <= 0:
+            raise
+
+        start_dt = _parse_openf1_datetime(date_start)
+        end_dt = _parse_openf1_datetime(date_end)
+        duration_seconds = (end_dt - start_dt).total_seconds()
+
+        # Hindari split tanpa akhir jika range sudah terlalu kecil.
+        if duration_seconds <= 1:
+            raise
+
+        mid_dt = start_dt + timedelta(seconds=duration_seconds / 2)
+        mid_iso = _format_openf1_datetime(mid_dt)
+
+        log.warning(
+            "422 pada %s session_key=%s driver_number=%s range=%s sampai %s. "
+            "Chunk dipecah lagi menjadi dua. Sisa depth=%s.",
+            endpoint,
+            session_key,
+            driver_number,
+            date_start,
+            date_end,
+            split_depth,
+        )
+
+        left_data = _fetch_endpoint_time_chunk(
+            endpoint=endpoint,
+            session_key=session_key,
+            driver_number=driver_number,
+            date_start=date_start,
+            date_end=mid_iso,
+            split_depth=split_depth - 1,
+        )
+        right_data = _fetch_endpoint_time_chunk(
+            endpoint=endpoint,
+            session_key=session_key,
+            driver_number=driver_number,
+            date_start=mid_iso,
+            date_end=date_end,
+            split_depth=split_depth - 1,
+        )
+
+        return left_data + right_data
+
+
+def _fetch_telemetry_by_driver_and_time(
+    endpoint: str,
+    session_key: int,
+    driver_numbers: list[int],
+    date_start: str,
+    date_end: str,
+) -> list[dict]:
+    """
+    Fetch telemetry endpoint dengan strategi:
+    1. loop per driver;
+    2. bagi rentang session date_start-date_end menjadi 2;
+    3. fallback recursive split jika 422 masih muncul.
+    """
+    initial_ranges = _split_time_range(date_start, date_end, chunks=TELEMETRY_TIME_CHUNKS)
+
+    all_data: list[dict] = []
+
+    log.info(
+        "Mulai fetch %s session_key=%s untuk %d driver. Rentang sesi %s sampai %s dibagi menjadi %d chunk.",
+        endpoint,
+        session_key,
+        len(driver_numbers),
+        date_start,
+        date_end,
+        len(initial_ranges),
+    )
+
+    for driver_no in driver_numbers:
+        for chunk_idx, (chunk_start, chunk_end) in enumerate(initial_ranges, start=1):
+            log.info(
+                "Fetch %s session_key=%s driver_number=%s chunk=%s/%s range=%s sampai %s",
+                endpoint,
+                session_key,
+                driver_no,
+                chunk_idx,
+                len(initial_ranges),
+                chunk_start,
+                chunk_end,
+            )
+
+            chunk_data = _fetch_endpoint_time_chunk(
+                endpoint=endpoint,
+                session_key=session_key,
+                driver_number=driver_no,
+                date_start=chunk_start,
+                date_end=chunk_end,
+            )
+            all_data.extend(chunk_data)
+
+    log.info(
+        "Selesai fetch %s session_key=%s. Total rows=%d",
+        endpoint,
+        session_key,
+        len(all_data),
+    )
+
+    return all_data
 
 def _to_parquet_bytes(data: list[dict], endpoint: str) -> bytes:
     """
@@ -419,19 +631,43 @@ def openf1_session_pipeline() -> None:
         start_iso = data_interval_start.isoformat()
         end_iso   = data_interval_end.isoformat()
 
-        url = f"{OPENF1_BASE}/sessions?date_end>={start_iso}&date_end<{end_iso}"
-        sessions = _get_json(url)
+        url = f"{OPENF1_BASE}/sessions"
+        params = {
+            "date_end>=": start_iso,
+            "date_end<": end_iso,
+        }
+        sessions = _get_json(url, params=params)
 
         if not sessions:
             log.info("Tidak ada sesi F1 yang berakhir antara %s dan %s.", start_iso, end_iso)
             return False  # Menghentikan eksekusi task di bawahnya
 
-        active_sessions = [
-            {"meeting_key": s["meeting_key"], "session_key": s["session_key"]}
-            for s in sessions
-        ]
+        active_sessions = []
+        for s in sessions:
+            if not s.get("date_start") or not s.get("date_end"):
+                log.warning(
+                    "Session dilewati karena date_start/date_end kosong: meeting_key=%s session_key=%s raw=%s",
+                    s.get("meeting_key"),
+                    s.get("session_key"),
+                    s,
+                )
+                continue
+
+            active_sessions.append(
+                {
+                    "meeting_key": s["meeting_key"],
+                    "session_key": s["session_key"],
+                    "date_start": s["date_start"],
+                    "date_end": s["date_end"],
+                }
+            )
+
+        if not active_sessions:
+            log.info("Ada respons sessions, tetapi tidak ada sesi valid dengan date_start dan date_end.")
+            return False
+
         log.info("Ditemukan %d sesi baru: %s", len(active_sessions), active_sessions)
-        log.info("url: %s", url)
+        log.info("url: %s params=%s", url, params)
         return active_sessions  # Otomatis masuk ke XCom, lalu di-expand()
 
 # ── Task 2 : Extract (Dynamic Task Mapping — 1 worker per session) ───────
@@ -439,40 +675,49 @@ def openf1_session_pipeline() -> None:
     def extract_api_to_s3(session: dict) -> None:
         sk = session["session_key"]
         mk = session["meeting_key"]
+        date_start = session["date_start"]
+        date_end = session["date_end"]
 
         s3 = S3Hook(aws_conn_id=AWS_CONN_ID)
 
-        # 1. Ambil daftar pembalap terlebih dahulu untuk paginasi endpoint berat
+        # 1. Ambil daftar pembalap terlebih dahulu untuk paginasi endpoint berat.
         time.sleep(API_SLEEP_SECONDS)
-        drivers_url = f"{OPENF1_BASE}/drivers?session_key={sk}"
-        drivers_data = _get_json(drivers_url)
-        driver_numbers = list({d.get("driver_number") for d in drivers_data if d.get("driver_number") is not None})
+        drivers_url = f"{OPENF1_BASE}/drivers"
+        drivers_data = _get_json(drivers_url, params={"session_key": sk})
+        driver_numbers = sorted(
+            {d.get("driver_number") for d in drivers_data if d.get("driver_number") is not None}
+        )
 
-        for idx, endpoint in enumerate(ENDPOINTS.keys()):
-            
-            # 2. Fetch Data (Penanganan khusus untuk endpoint dengan payload masif)
-            if endpoint in ["car_data", "location"]:
-                # Wajib diloop per driver agar tidak terkena 422 Payload Too Large
-                data = []
-                for driver_no in driver_numbers:
-                    time.sleep(API_SLEEP_SECONDS)
-                    url = f"{OPENF1_BASE}/{endpoint}?session_key={sk}&driver_number={driver_no}"
-                    data.extend(_get_json(url))
-                    
+        if not driver_numbers:
+            log.warning("Tidak ada driver_number untuk session_key=%s. Telemetry endpoint akan kosong.", sk)
+
+        for endpoint in ENDPOINTS.keys():
+
+            # 2. Fetch Data.
+            # Endpoint telemetry seperti car_data wajib dibatasi per driver dan per time range
+            # agar request tidak terlalu besar dan tidak memicu HTTP 422.
+            if endpoint in TELEMETRY_ENDPOINTS:
+                data = _fetch_telemetry_by_driver_and_time(
+                    endpoint=endpoint,
+                    session_key=sk,
+                    driver_numbers=driver_numbers,
+                    date_start=date_start,
+                    date_end=date_end,
+                )
+
             elif endpoint == "meetings":
                 time.sleep(API_SLEEP_SECONDS)
-                url = f"{OPENF1_BASE}/meetings?meeting_key={mk}"
-                data = _get_json(url)
-                
+                url = f"{OPENF1_BASE}/meetings"
+                data = _get_json(url, params={"meeting_key": mk})
+
             else:
-                # intervals dan position aman ditarik hanya dengan session_key
                 time.sleep(API_SLEEP_SECONDS)
-                url = f"{OPENF1_BASE}/{endpoint}?session_key={sk}"
-                data = _get_json(url)
+                url = f"{OPENF1_BASE}/{endpoint}"
+                data = _get_json(url, params={"session_key": sk})
 
             # ── JSON → Parquet ────────────────────────────────────────────────
             parquet_bytes = _to_parquet_bytes(data, endpoint)
-            del data 
+            del data
 
             # ── Upload ke S3 ──────────────────────────────────────────────────
             s3_key = f"{S3_ROOT}/{endpoint}/meeting_key={mk}/session_key={sk}/data.parquet"
@@ -480,9 +725,9 @@ def openf1_session_pipeline() -> None:
                 bytes_data=parquet_bytes,
                 key=s3_key,
                 bucket_name=S3_BUCKET,
-                replace=True,  
+                replace=True,
             )
-            del parquet_bytes 
+            del parquet_bytes
 
             log.info(
                 "[%s] session_key=%s tersimpan → s3://%s/%s",
