@@ -36,8 +36,8 @@ from __future__ import annotations
 import io
 import logging
 import time
-from datetime import datetime, timedelta
-from urllib.parse import urlencode
+from datetime import datetime, timedelta, timezone
+from urllib.parse import quote
 
 import pandas as pd
 import requests
@@ -274,18 +274,81 @@ ENDPOINTS: dict[str, dict] = {
 #  Helpers
 # ═══════════════════════════════════════════════════════════════════════════════
 
+def _format_query_value(value) -> str:
+    """
+    Format nilai query agar aman untuk URL OpenF1.
+
+    Kunci filter seperti date_start>= dan date_end<= sengaja tidak di-encode,
+    karena dokumentasi OpenF1 memakai operator langsung pada nama parameter.
+    Nilai tetap di-encode seperlunya agar karakter berisiko tidak merusak URL.
+    """
+    if isinstance(value, bool):
+        return str(value).lower()
+    if value is None:
+        return ""
+    return str(value)
+
+
+def _build_openf1_url(endpoint_or_url: str, params: dict | None = None) -> str:
+    """
+    Membuat URL OpenF1 dengan operator filter sesuai dokumentasi.
+
+    Catatan penting:
+    OpenF1 memakai sintaks filter seperti:
+    - lap_duration>=120
+    - date_start>=2023-09-01
+    - date_end<=2023-09-30
+    - date>=2024-02-21T07:00:00Z
+    - date<2024-02-21T11:30:00Z
+
+    Karena itu parameter beroperator tidak boleh dibentuk sebagai dict requests
+    standar seperti {"date>=": value}. Jika dipakai langsung oleh requests,
+    hasilnya menjadi date%3E%3D=value, yang secara raw query berbeda dari
+    pola dokumentasi. Fungsi ini membentuk query string sendiri agar hasilnya
+    menjadi date%3E=value untuk >= dan date%3Cvalue untuk <.
+    """
+    if endpoint_or_url.startswith("http://") or endpoint_or_url.startswith("https://"):
+        base_url = endpoint_or_url
+    else:
+        base_url = f"{OPENF1_BASE}/{endpoint_or_url.lstrip('/')}"
+
+    if not params:
+        return base_url
+
+    query_parts = []
+    for key, value in params.items():
+        key = str(key)
+        formatted_value = _format_query_value(value)
+        encoded_value = quote(formatted_value, safe=":-TZ")
+
+        if key.endswith((">=", "<=")):
+            # Contoh: key="date>=", value="2024-02-21T07:00:00Z"
+            # Raw URL: date>=2024-02-21T07:00:00Z
+            # Prepared requests URL: date%3E=2024-02-21T07:00:00Z
+            query_parts.append(f"{key}{encoded_value}")
+        elif key.endswith((">", "<")):
+            # Untuk operator strict seperti date<end, browser/requests akan menyiapkan URL
+            # menjadi date%3Cend=. Bentuk ini mengikuti pola yang terbukti berhasil pada OpenF1.
+            query_parts.append(f"{key}{encoded_value}=")
+        else:
+            query_parts.append(f"{key}={encoded_value}")
+
+    separator = "&" if "?" in base_url else "?"
+    return base_url + separator + "&".join(query_parts)
+
+
 def _get_json(url: str, params: dict | None = None, timeout: int = 120) -> list[dict]:
     """
     GET JSON dari OpenF1 API.
 
     Catatan penting:
-    - Gunakan params agar operator filter seperti date>= dan date< di-encode aman.
-    - Ini mencegah karakter '+' pada timezone ISO 8601 berubah menjadi spasi di URL.
+    - Operator filter dibuat eksplisit di URL agar struktur query sama dengan dokumentasi OpenF1.
+    - Fallback tetap disediakan pada check_new_sessions jika server OpenF1 mengembalikan 5xx.
     """
-    encoded_params = urlencode(params or {}, doseq=True)
-    log.debug("GET %s%s", url, f"?{encoded_params}" if encoded_params else "")
+    final_url = _build_openf1_url(url, params=params)
+    log.debug("GET %s", final_url)
 
-    resp = requests.get(url, params=params, timeout=timeout)
+    resp = requests.get(final_url, timeout=timeout)
 
     try:
         resp.raise_for_status()
@@ -294,9 +357,8 @@ def _get_json(url: str, params: dict | None = None, timeout: int = 120) -> list[
         # endpoint pada sesi ini memang kosong di database OpenF1.
         if resp.status_code == 404:
             log.warning(
-                "Data tidak ditemukan (404) untuk %s. Params=%s. Mengembalikan array kosong.",
-                url,
-                params,
+                "Data tidak ditemukan (404) untuk %s. Mengembalikan array kosong.",
+                final_url,
             )
             return []
 
@@ -305,13 +367,13 @@ def _get_json(url: str, params: dict | None = None, timeout: int = 120) -> list[
         if resp.status_code == 422:
             log.error(
                 "OpenF1 menolak request karena payload terlalu besar atau parameter tidak valid. "
-                "URL=%s Params=%s Response=%s",
-                url,
-                params,
+                "URL=%s Response=%s",
+                final_url,
                 resp.text[:500],
             )
 
-        # Error lain seperti 429 atau 5xx tetap raise agar retry Airflow aktif.
+        # Error lain seperti 429 atau 5xx tetap raise agar retry Airflow aktif,
+        # kecuali dipanggil dari helper yang memang punya fallback eksplisit.
         raise e
 
     return resp.json()
@@ -320,24 +382,34 @@ def _get_json(url: str, params: dict | None = None, timeout: int = 120) -> list[
 def _parse_openf1_datetime(value: str | datetime) -> datetime:
     """
     Parse datetime OpenF1 dari string ISO 8601 atau objek datetime.
-    OpenF1 umumnya mengirim format seperti 2024-05-26T13:00:00+00:00.
+    Semua nilai dinormalisasi ke UTC agar komparasi interval Airflow stabil.
     """
     if isinstance(value, datetime):
-        return value
+        dt = value
+    else:
+        if not value:
+            raise ValueError("Nilai datetime kosong. date_start/date_end wajib tersedia.")
+        dt = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
 
-    if not value:
-        raise ValueError("Nilai datetime kosong. date_start/date_end wajib tersedia.")
-
-    # Python <3.11 kadang lebih aman jika 'Z' diganti '+00:00'.
-    return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
 
 
-def _format_openf1_datetime(value: datetime) -> str:
+def _format_openf1_datetime(value: str | datetime) -> str:
     """
     Format datetime untuk parameter OpenF1.
-    Microsecond dihapus agar URL lebih bersih dan konsisten.
+    Menggunakan suffix Z agar URL tidak membawa karakter '+' pada timezone.
     """
-    return value.replace(microsecond=0).isoformat()
+    dt = _parse_openf1_datetime(value).replace(microsecond=0)
+    return dt.isoformat().replace("+00:00", "Z")
+
+
+def _format_openf1_date(value: str | datetime) -> str:
+    """
+    Format date-only untuk query /sessions agar sesuai contoh dokumentasi OpenF1.
+    """
+    return _parse_openf1_datetime(value).date().isoformat()
 
 
 def _split_time_range(date_start: str | datetime, date_end: str | datetime, chunks: int = 2) -> list[tuple[str, str]]:
@@ -628,21 +700,62 @@ def openf1_session_pipeline() -> None:
         Jika tidak ada, pipeline otomatis di-skip. Jika ada, teruskan datanya ke XCom.
         Output list[dict] ini yang nantinya di-.expand() oleh extract_api_to_s3.
         """
-        start_iso = data_interval_start.isoformat()
-        end_iso   = data_interval_end.isoformat()
+        start_dt = _parse_openf1_datetime(data_interval_start)
+        end_dt = _parse_openf1_datetime(data_interval_end)
 
-        url = f"{OPENF1_BASE}/sessions"
-        params = {
-            "date_end>=": start_iso,
-            "date_end<": end_iso,
+        start_iso = _format_openf1_datetime(start_dt)
+        end_iso = _format_openf1_datetime(end_dt)
+        start_date = _format_openf1_date(start_dt)
+
+        # Airflow memakai interval half-open [start, end).
+        # Agar tetap memakai operator dokumentasi OpenF1 date_end<=,
+        # end dikurangi 1 detik sehingga tidak menarik sesi bulan berikutnya.
+        end_inclusive_iso = _format_openf1_datetime(end_dt - timedelta(seconds=1))
+
+        sessions_url = f"{OPENF1_BASE}/sessions"
+        sessions_params = {
+            "date_start>=": start_date,
+            "date_end<=": end_inclusive_iso,
         }
-        sessions = _get_json(url, params=params)
+
+        try:
+            sessions = _get_json(sessions_url, params=sessions_params)
+            log.info(
+                "Fetched %d sessions dari OpenF1 dengan filter dokumentasi: date_start >= %s dan date_end <= %s.",
+                len(sessions),
+                start_date,
+                end_inclusive_iso,
+            )
+        except requests.exceptions.HTTPError as e:
+            status_code = e.response.status_code if e.response is not None else None
+
+            # Fallback defensif: jika OpenF1 memberi 5xx untuk filter tanggal,
+            # ambil per year lalu filter lokal. Ini mencegah DAG gagal karena masalah server API.
+            if status_code not in {500, 502, 503, 504}:
+                raise
+
+            log.warning(
+                "OpenF1 mengembalikan HTTP %s untuk filter tanggal /sessions. "
+                "Fallback ke /sessions?year=YYYY lalu filter lokal. Interval=%s sampai %s",
+                status_code,
+                start_iso,
+                end_iso,
+            )
+
+            sessions = []
+            for year in range(start_dt.year, end_dt.year + 1):
+                time.sleep(API_SLEEP_SECONDS)
+                year_sessions = _get_json(sessions_url, params={"year": year})
+                sessions.extend(year_sessions)
+                log.info("Fetched %d sessions dari OpenF1 untuk year=%s.", len(year_sessions), year)
 
         if not sessions:
-            log.info("Tidak ada sesi F1 yang berakhir antara %s dan %s.", start_iso, end_iso)
-            return False  # Menghentikan eksekusi task di bawahnya
+            log.info("Tidak ada sessions dari OpenF1 untuk interval %s sampai %s.", start_iso, end_iso)
+            return False
 
         active_sessions = []
+        seen_session_keys: set[int] = set()
+
         for s in sessions:
             if not s.get("date_start") or not s.get("date_end"):
                 log.warning(
@@ -653,21 +766,32 @@ def openf1_session_pipeline() -> None:
                 )
                 continue
 
+            session_end_dt = _parse_openf1_datetime(s["date_end"])
+
+            # Tetap filter lokal untuk menjaga idempotency interval Airflow.
+            if not (start_dt <= session_end_dt < end_dt):
+                continue
+
+            session_key = s["session_key"]
+            if session_key in seen_session_keys:
+                continue
+            seen_session_keys.add(session_key)
+
             active_sessions.append(
                 {
                     "meeting_key": s["meeting_key"],
-                    "session_key": s["session_key"],
+                    "session_key": session_key,
                     "date_start": s["date_start"],
                     "date_end": s["date_end"],
                 }
             )
 
         if not active_sessions:
-            log.info("Ada respons sessions, tetapi tidak ada sesi valid dengan date_start dan date_end.")
+            log.info("Tidak ada sesi F1 yang berakhir antara %s dan %s setelah filter lokal.", start_iso, end_iso)
             return False
 
         log.info("Ditemukan %d sesi baru: %s", len(active_sessions), active_sessions)
-        log.info("url: %s params=%s", url, params)
+        log.info("Filter akhir check_new_sessions: date_end >= %s dan date_end < %s", start_iso, end_iso)
         return active_sessions  # Otomatis masuk ke XCom, lalu di-expand()
 
 # ── Task 2 : Extract (Dynamic Task Mapping — 1 worker per session) ───────
