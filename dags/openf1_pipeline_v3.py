@@ -91,6 +91,10 @@ OPENF1_BASE = "https://api.openf1.org/v1"
 # Jeda antar-request agar IP home server tidak diblokir oleh OpenF1.
 API_SLEEP_SECONDS = 2
 
+# Ukuran pecahan waktu untuk endpoint telemetry besar seperti car_data.
+# Jika masih terkena 422, cukup turunkan menjadi 10 atau 5 menit.
+HEAVY_ENDPOINT_CHUNK_MINUTES = 15
+
 # ── Endpoint catalogue ────────────────────────────────────────────────────────
 # Filter berbasis tanggal telah dihapus karena kita menarik data
 # berdasarkan identitas event (session_key / meeting_key).
@@ -276,11 +280,41 @@ def _get_json(url: str, timeout: int = 120) -> list[dict]:
             log.warning("Data tidak ditemukan (404) untuk %s. Mengembalikan array kosong.", url)
             return []
             
-        # Jika menerima error lain (seperti 429 Too Many Requests atau 5xx Server Error),
-        # tetap raise exception agar mekanisme retry & backoff Airflow Anda tetap terpicu.
+        # Jika menerima error lain (seperti 422, 429 Too Many Requests, atau 5xx Server Error),
+        # tetap raise exception agar mekanisme retry & backoff Airflow tetap terpicu.
         raise e
         
     return resp.json()
+
+
+def _build_url(endpoint: str, params: list[tuple[str, object]]) -> str:
+    """
+    Membuat URL API dengan aman, termasuk parameter OpenF1 seperti date>= dan date<.
+    Ini menjaga kode tetap rapi saat request car_data dipecah berdasarkan waktu.
+    """
+    return requests.Request(
+        "GET",
+        f"{OPENF1_BASE}/{endpoint}",
+        params=params,
+    ).prepare().url
+
+
+def _iter_time_chunks(
+    start_iso: str,
+    end_iso: str,
+    minutes: int = HEAVY_ENDPOINT_CHUNK_MINUTES,
+):
+    """
+    Memecah rentang waktu sesi menjadi beberapa potongan kecil.
+    Dipakai untuk endpoint telemetry besar agar request tidak terkena 422.
+    """
+    start = datetime.fromisoformat(start_iso.replace("Z", "+00:00"))
+    end = datetime.fromisoformat(end_iso.replace("Z", "+00:00"))
+
+    while start < end:
+        chunk_end = min(start + timedelta(minutes=minutes), end)
+        yield start.isoformat(), chunk_end.isoformat()
+        start = chunk_end
 
 
 def _to_parquet_bytes(data: list[dict], endpoint: str) -> bytes:
@@ -427,7 +461,12 @@ def openf1_session_pipeline() -> None:
             return False  # Menghentikan eksekusi task di bawahnya
 
         active_sessions = [
-            {"meeting_key": s["meeting_key"], "session_key": s["session_key"]}
+            {
+                "meeting_key": s["meeting_key"],
+                "session_key": s["session_key"],
+                "date_start": s["date_start"],
+                "date_end": s["date_end"],
+            }
             for s in sessions
         ]
         log.info("Ditemukan %d sesi baru: %s", len(active_sessions), active_sessions)
@@ -439,6 +478,8 @@ def openf1_session_pipeline() -> None:
     def extract_api_to_s3(session: dict) -> None:
         sk = session["session_key"]
         mk = session["meeting_key"]
+        session_start = session["date_start"]
+        session_end = session["date_end"]
 
         s3 = S3Hook(aws_conn_id=AWS_CONN_ID)
 
@@ -452,12 +493,22 @@ def openf1_session_pipeline() -> None:
             
             # 2. Fetch Data (Penanganan khusus untuk endpoint dengan payload masif)
             if endpoint in ["car_data", "location"]:
-                # Wajib diloop per driver agar tidak terkena 422 Payload Too Large
+                # Endpoint telemetry besar wajib dipecah per driver dan per rentang waktu.
+                # Ini mencegah request terlalu besar yang memicu HTTP 422 dari OpenF1.
                 data = []
+
                 for driver_no in driver_numbers:
-                    time.sleep(API_SLEEP_SECONDS)
-                    url = f"{OPENF1_BASE}/{endpoint}?session_key={sk}&driver_number={driver_no}"
-                    data.extend(_get_json(url))
+                    for chunk_start, chunk_end in _iter_time_chunks(session_start, session_end):
+                        time.sleep(API_SLEEP_SECONDS)
+
+                        url = _build_url(endpoint, [
+                            ("session_key", sk),
+                            ("driver_number", driver_no),
+                            ("date>=", chunk_start),
+                            ("date<", chunk_end),
+                        ])
+
+                        data.extend(_get_json(url))
                     
             elif endpoint == "meetings":
                 time.sleep(API_SLEEP_SECONDS)
