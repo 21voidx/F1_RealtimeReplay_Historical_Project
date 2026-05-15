@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import io
 import logging
+import random
 import time
 from datetime import datetime, timedelta
 
@@ -88,8 +89,17 @@ DBT_ENV: dict[str, str] = {
 OPENF1_BASE = "https://api.openf1.org/v1"
 
 # ── API throttle ──────────────────────────────────────────────────────────────
-# Jeda antar-request agar IP home server tidak diblokir oleh OpenF1.
-API_SLEEP_SECONDS = 2
+# OpenF1 free tier: 3 req/s dan 30 req/min.
+# Pakai buffer supaya tidak persis menyentuh batas 30 request/menit.
+API_SLEEP_SECONDS = 2.5
+API_MAX_ATTEMPTS = 8
+API_BACKOFF_MAX_SECONDS = 300
+
+# Endpoint telemetry frekuensi tinggi. Satu request per driver untuk satu session
+# masih bisa terlalu besar, sehingga perlu dipecah per rentang waktu.
+TELEMETRY_ENDPOINTS = {"car_data", "location"}
+TELEMETRY_WINDOW_MINUTES = 10
+TELEMETRY_MIN_WINDOW_SECONDS = 30
 
 # ── Endpoint catalogue ────────────────────────────────────────────────────────
 # Filter berbasis tanggal telah dihapus karena kita menarik data
@@ -263,24 +273,181 @@ ENDPOINTS: dict[str, dict] = {
 #  Helpers
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def _get_json(url: str, timeout: int = 120) -> list[dict]:
-    log.debug("GET %s", url)
-    resp = requests.get(url, timeout=timeout)
-    
-    try:
-        resp.raise_for_status()
-    except requests.exceptions.HTTPError as e:
-        # Jika API merespons 404 (Not Found), artinya data untuk 
-        # endpoint pada sesi ini memang kosong di database OpenF1.
+class OpenF1UnprocessableEntity(requests.exceptions.HTTPError):
+    """Dipakai untuk 422 agar endpoint telemetry bisa dipecah menjadi window lebih kecil."""
+
+
+def _sleep_before_request(attempt: int, retry_after: str | None = None) -> None:
+    """Rate-limit sederhana yang menghormati Retry-After saat API mengirimkannya."""
+    if retry_after:
+        try:
+            sleep_seconds = int(retry_after)
+        except ValueError:
+            sleep_seconds = API_SLEEP_SECONDS
+    elif attempt <= 1:
+        sleep_seconds = API_SLEEP_SECONDS
+    else:
+        sleep_seconds = min(
+            API_BACKOFF_MAX_SECONDS,
+            (2 ** attempt) + random.uniform(0, 1),
+        )
+
+    log.debug("Sleep %.2f detik sebelum request OpenF1", sleep_seconds)
+    time.sleep(sleep_seconds)
+
+
+def _get_json(endpoint_or_url: str, params: dict | None = None, timeout: int = 120) -> list[dict]:
+    """
+    GET JSON dari OpenF1 dengan retry untuk 429 dan 5xx.
+    422 tidak langsung di-retry sebagai request yang sama, karena pada telemetry
+    biasanya artinya request terlalu besar atau filter belum cukup spesifik.
+    """
+    url = endpoint_or_url if endpoint_or_url.startswith("http") else f"{OPENF1_BASE}/{endpoint_or_url.lstrip('/')}"
+    retry_after = None
+
+    for attempt in range(1, API_MAX_ATTEMPTS + 1):
+        _sleep_before_request(attempt, retry_after=retry_after)
+        retry_after = None
+
+        log.debug("GET %s params=%s attempt=%s", url, params, attempt)
+        resp = requests.get(url, params=params, timeout=timeout)
+
+        if resp.status_code == 200:
+            return resp.json()
+
         if resp.status_code == 404:
-            log.warning("Data tidak ditemukan (404) untuk %s. Mengembalikan array kosong.", url)
+            log.warning("Data tidak ditemukan (404) untuk %s. Mengembalikan array kosong.", resp.url)
             return []
-            
-        # Jika menerima error lain (seperti 429 Too Many Requests atau 5xx Server Error),
-        # tetap raise exception agar mekanisme retry & backoff Airflow Anda tetap terpicu.
-        raise e
-        
-    return resp.json()
+
+        if resp.status_code == 422:
+            body = resp.text[:1000]
+            msg = f"422 dari OpenF1 untuk {resp.url}. Response body: {body}"
+            raise OpenF1UnprocessableEntity(msg, response=resp)
+
+        if resp.status_code == 429 or 500 <= resp.status_code < 600:
+            retry_after = resp.headers.get("Retry-After")
+            log.warning(
+                "OpenF1 status=%s untuk %s. Retry attempt %s/%s. Retry-After=%s",
+                resp.status_code, resp.url, attempt, API_MAX_ATTEMPTS, retry_after,
+            )
+            continue
+
+        # 400/401/403 dan error client lain tidak usah diulang sampai kiamat.
+        resp.raise_for_status()
+
+    raise RuntimeError(f"OpenF1 request gagal setelah {API_MAX_ATTEMPTS} attempt: {url} params={params}")
+
+
+def _parse_openf1_datetime(value: str) -> datetime:
+    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+
+def _to_openf1_datetime(value: datetime) -> str:
+    # OpenF1 menerima ISO string. Biarkan offset UTC tetap eksplisit.
+    return value.isoformat()
+
+
+def _iter_time_windows(start: datetime, end: datetime, minutes: int):
+    current = start
+    step = timedelta(minutes=minutes)
+
+    while current < end:
+        next_dt = min(current + step, end)
+        yield current, next_dt
+        current = next_dt
+
+
+def _get_session_bounds(session: dict) -> tuple[datetime, datetime]:
+    """Ambil date_start dan date_end session. Fallback ke endpoint sessions jika XCom lama belum membawa tanggal."""
+    if session.get("date_start") and session.get("date_end"):
+        return (
+            _parse_openf1_datetime(session["date_start"]),
+            _parse_openf1_datetime(session["date_end"]),
+        )
+
+    sk = session["session_key"]
+    rows = _get_json("sessions", params={"session_key": sk})
+    if not rows or not rows[0].get("date_start") or not rows[0].get("date_end"):
+        raise ValueError(f"Tidak bisa menentukan date_start/date_end untuk session_key={sk}")
+
+    return (
+        _parse_openf1_datetime(rows[0]["date_start"]),
+        _parse_openf1_datetime(rows[0]["date_end"]),
+    )
+
+
+def _fetch_telemetry_window(
+    endpoint: str,
+    session_key: int,
+    driver_number: int,
+    start: datetime,
+    end: datetime,
+) -> list[dict]:
+    """
+    Ambil telemetry dalam window. Jika 422, belah window secara rekursif.
+    Ini yang menyelesaikan kasus seperti:
+    /car_data?session_key=9462&driver_number=1
+    """
+    params = {
+        "session_key": session_key,
+        "driver_number": driver_number,
+        "date>=": _to_openf1_datetime(start),
+        "date<": _to_openf1_datetime(end),
+    }
+
+    try:
+        return _get_json(endpoint, params=params, timeout=180)
+    except OpenF1UnprocessableEntity:
+        window_seconds = (end - start).total_seconds()
+
+        if window_seconds <= TELEMETRY_MIN_WINDOW_SECONDS:
+            log.exception(
+                "422 tetap terjadi pada window minimum. endpoint=%s session_key=%s driver=%s start=%s end=%s",
+                endpoint, session_key, driver_number, start, end,
+            )
+            raise
+
+        midpoint = start + timedelta(seconds=window_seconds / 2)
+        log.warning(
+            "422 pada %s session=%s driver=%s window=%s - %s. Window dibelah menjadi dua.",
+            endpoint, session_key, driver_number, start, end,
+        )
+
+        left = _fetch_telemetry_window(endpoint, session_key, driver_number, start, midpoint)
+        right = _fetch_telemetry_window(endpoint, session_key, driver_number, midpoint, end)
+        return left + right
+
+
+def _fetch_telemetry_endpoint(
+    endpoint: str,
+    session_key: int,
+    driver_numbers: list[int],
+    session_start: datetime,
+    session_end: datetime,
+) -> list[dict]:
+    data: list[dict] = []
+
+    for driver_no in sorted(driver_numbers):
+        for window_start, window_end in _iter_time_windows(
+            session_start,
+            session_end,
+            TELEMETRY_WINDOW_MINUTES,
+        ):
+            rows = _fetch_telemetry_window(
+                endpoint=endpoint,
+                session_key=session_key,
+                driver_number=driver_no,
+                start=window_start,
+                end=window_end,
+            )
+            data.extend(rows)
+
+            log.info(
+                "[%s] session_key=%s driver=%s window=%s - %s rows=%s",
+                endpoint, session_key, driver_no, window_start, window_end, len(rows),
+            )
+
+    return data
 
 
 def _to_parquet_bytes(data: list[dict], endpoint: str) -> bytes:
@@ -399,10 +566,10 @@ _LOAD_SQL_TEMPLATE: str = "\n".join(
     tags=["openf1", "f1", "snowflake", "dbt"],
     doc_md=__doc__,
     default_args={
-        "retries": 3,                           # Increase retries
-        "retry_delay": timedelta(seconds=60),   # Start with a 1-minute delay
-        "retry_exponential_backoff": True,      # Back off exponentially (1m, 2m, 4m...)
-        "max_retry_delay": timedelta(minutes=10), # Cap the maximum delay
+        "retries": 6,
+        "retry_delay": timedelta(minutes=2),
+        "retry_exponential_backoff": True,
+        "max_retry_delay": timedelta(minutes=30),
         "owner": "data-engineering",
     },
 )
@@ -427,7 +594,12 @@ def openf1_session_pipeline() -> None:
             return False  # Menghentikan eksekusi task di bawahnya
 
         active_sessions = [
-            {"meeting_key": s["meeting_key"], "session_key": s["session_key"]}
+            {
+                "meeting_key": s["meeting_key"],
+                "session_key": s["session_key"],
+                "date_start": s.get("date_start"),
+                "date_end": s.get("date_end"),
+            }
             for s in sessions
         ]
         log.info("Ditemukan %d sesi baru: %s", len(active_sessions), active_sessions)
@@ -435,40 +607,42 @@ def openf1_session_pipeline() -> None:
         return active_sessions  # Otomatis masuk ke XCom, lalu di-expand()
 
 # ── Task 2 : Extract (Dynamic Task Mapping — 1 worker per session) ───────
-    @task(max_active_tis_per_dagrun=1)
+    @task(max_active_tis_per_dagrun=1, pool="openf1_api")
     def extract_api_to_s3(session: dict) -> None:
         sk = session["session_key"]
         mk = session["meeting_key"]
 
         s3 = S3Hook(aws_conn_id=AWS_CONN_ID)
 
-        # 1. Ambil daftar pembalap terlebih dahulu untuk paginasi endpoint berat
-        time.sleep(API_SLEEP_SECONDS)
-        drivers_url = f"{OPENF1_BASE}/drivers?session_key={sk}"
-        drivers_data = _get_json(drivers_url)
-        driver_numbers = list({d.get("driver_number") for d in drivers_data if d.get("driver_number") is not None})
+        # 1. Ambil daftar pembalap dan batas waktu session.
+        #    Untuk telemetry, kombinasi session_key + driver_number saja belum cukup aman
+        #    karena payload bisa terlalu besar dan memicu HTTP 422.
+        drivers_data = _get_json("drivers", params={"session_key": sk})
+        driver_numbers = list({
+            d.get("driver_number")
+            for d in drivers_data
+            if d.get("driver_number") is not None
+        })
+        session_start, session_end = _get_session_bounds(session)
 
         for idx, endpoint in enumerate(ENDPOINTS.keys()):
-            
-            # 2. Fetch Data (Penanganan khusus untuk endpoint dengan payload masif)
-            if endpoint in ["car_data", "location"]:
-                # Wajib diloop per driver agar tidak terkena 422 Payload Too Large
-                data = []
-                for driver_no in driver_numbers:
-                    time.sleep(API_SLEEP_SECONDS)
-                    url = f"{OPENF1_BASE}/{endpoint}?session_key={sk}&driver_number={driver_no}"
-                    data.extend(_get_json(url))
-                    
+
+            # 2. Fetch Data
+            if endpoint in TELEMETRY_ENDPOINTS:
+                data = _fetch_telemetry_endpoint(
+                    endpoint=endpoint,
+                    session_key=sk,
+                    driver_numbers=driver_numbers,
+                    session_start=session_start,
+                    session_end=session_end,
+                )
+
             elif endpoint == "meetings":
-                time.sleep(API_SLEEP_SECONDS)
-                url = f"{OPENF1_BASE}/meetings?meeting_key={mk}"
-                data = _get_json(url)
-                
+                data = _get_json("meetings", params={"meeting_key": mk})
+
             else:
-                # intervals dan position aman ditarik hanya dengan session_key
-                time.sleep(API_SLEEP_SECONDS)
-                url = f"{OPENF1_BASE}/{endpoint}?session_key={sk}"
-                data = _get_json(url)
+                # Endpoint biasa cukup difilter per session_key.
+                data = _get_json(endpoint, params={"session_key": sk})
 
             # ── JSON → Parquet ────────────────────────────────────────────────
             parquet_bytes = _to_parquet_bytes(data, endpoint)
