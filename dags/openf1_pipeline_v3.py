@@ -29,20 +29,6 @@ Memory Strategy:
   • Di dalam setiap worker, data di-del dari memori segera setelah di-upload ke S3
     sehingga RAM tidak menumpuk lintas endpoint.
   • Format Parquet (bukan JSON) memberikan kompresi kolumnar dan schema yang lebih kuat.
-
-Changelog v3 → v3.1 (bugfix):
-  FIX-1 │ _build_url: requests.Request.prepare() percent-encodes '>' dan '<' di
-         │ nama parameter (date>= → date%3E%3D), menyebabkan OpenF1 mengabaikan
-         │ semua filter tanggal. Akibatnya request car_data dikirim tanpa batas
-         │ waktu → payload terlalu besar → HTTP 422. Diganti dengan manual
-         │ query-string builder yang mengenkode VALUE saja, bukan KEY.
-  FIX-2 │ ENDPOINTS['sessions']['columns']: kunci 'country_name' duplikat
-         │ (baris 227 & 232). Python dict diam-diam menimpa entri pertama.
-         │ Entri duplikat dihapus.
-  FIX-3 │ _get_json: HTTP 422 sebelumnya di-raise sebagai HTTPError biasa,
-         │ memicu 3x retry yang sia-sia (request identik → gagal lagi).
-         │ Sekarang di-raise sebagai AirflowFailException agar task langsung
-         │ FAILED tanpa membuang retry slot.
 """
 
 from __future__ import annotations
@@ -51,12 +37,9 @@ import io
 import logging
 import time
 from datetime import datetime, timedelta
-# FIX-1: tambah quote_plus untuk URL encoding value-only
-from urllib.parse import quote_plus
 
 import pandas as pd
 import requests
-from airflow.exceptions import AirflowFailException          # FIX-3
 from airflow.sdk import dag, task
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
 from airflow.providers.common.sql.operators.sql import SQLExecuteQueryOperator
@@ -108,10 +91,6 @@ OPENF1_BASE = "https://api.openf1.org/v1"
 # Jeda antar-request agar IP home server tidak diblokir oleh OpenF1.
 API_SLEEP_SECONDS = 2
 
-# Ukuran pecahan waktu untuk endpoint telemetry besar seperti car_data.
-# Jika masih terkena 422, cukup turunkan menjadi 10 atau 5 menit.
-HEAVY_ENDPOINT_CHUNK_MINUTES = 2
-
 # ── Endpoint catalogue ────────────────────────────────────────────────────────
 # Filter berbasis tanggal telah dihapus karena kita menarik data
 # berdasarkan identitas event (session_key / meeting_key).
@@ -132,7 +111,7 @@ ENDPOINTS: dict[str, dict] = {
             "speed":         "$1:speed::INTEGER",
             "throttle":      "$1:throttle::INTEGER",
             "brake":         "$1:brake::INTEGER",
-            "n_gear":        "$1:n_gear::INTEGER",
+            "n_gear":         "$1:n_gear::INTEGER",
             "drs":           "$1:drs::INTEGER",
         },
     },
@@ -146,7 +125,7 @@ ENDPOINTS: dict[str, dict] = {
             "last_name":       "$1:last_name::VARCHAR",
             "full_name":       "$1:full_name::VARCHAR",
             "name_acronym":    "$1:name_acronym::VARCHAR",
-            "headshot_url":    "$1:headshot_url::VARCHAR",
+            "headshot_url":     "$1:headshot_url::VARCHAR",
             "team_name":       "$1:team_name::VARCHAR",
             "team_colour":     "$1:team_colour::VARCHAR",
             "country_code":    "$1:country_code::VARCHAR",
@@ -179,9 +158,9 @@ ENDPOINTS: dict[str, dict] = {
             "duration_sector_3": "$1:duration_sector_3::FLOAT",
             "i1_speed":          "$1:i1_speed::INTEGER",
             "i2_speed":          "$1:i2_speed::INTEGER",
-            "segments_sector_1": "$1:segments_sector_1::VARIANT",
-            "segments_sector_2": "$1:segments_sector_2::VARIANT",
-            "segments_sector_3": "$1:segments_sector_3::VARIANT",
+            "segments_sector_1":  "$1:segments_sector_1::VARIANT",
+            "segments_sector_2":  "$1:segments_sector_2::VARIANT",
+            "segments_sector_3":  "$1:segments_sector_3::VARIANT",
             "st_speed":          "$1:st_speed::INTEGER",
         },
     },
@@ -194,7 +173,7 @@ ENDPOINTS: dict[str, dict] = {
             "country_name":          "$1:country_name::VARCHAR",
             "circuit_key":           "$1:circuit_key::INTEGER",
             "circuit_image":         "$1:circuit_image::VARCHAR",
-            "circuit_info_url":      "$1:circuit_info_url::VARCHAR",
+            "circuit_info_url":       "$1:circuit_info_url::VARCHAR",
             "circuit_short_name":    "$1:circuit_short_name::VARCHAR",
             "circuit_type":          "$1:circuit_type::VARCHAR",
             "circuit_code":          "$1:circuit_code::VARCHAR",
@@ -204,7 +183,7 @@ ENDPOINTS: dict[str, dict] = {
             "date_end":              "$1:date_end::TIMESTAMP_NTZ",
             "gmt_offset":            "$1:gmt_offset::VARCHAR",
             "is_cancelled":          "$1:is_cancelled::BOOLEAN",
-            "location":              "$1:location::VARCHAR",
+            "location":             "$1:location::VARCHAR",
         },
     },
     "pit": {
@@ -217,7 +196,7 @@ ENDPOINTS: dict[str, dict] = {
             "lap_number":    "$1:lap_number::INTEGER",
             "pit_duration":  "$1:pit_duration::FLOAT",
             "lane_duration": "$1:lane_duration::FLOAT",
-            "stop_duration": "$1:stop_duration::FLOAT",
+            "stop_duration":   "$1:stop_duration::FLOAT",
         },
     },
     "position": {
@@ -239,7 +218,7 @@ ENDPOINTS: dict[str, dict] = {
             "session_name":       "$1:session_name::VARCHAR",
             "session_type":       "$1:session_type::VARCHAR",
             "year":               "$1:year::INTEGER",
-            "circuit_key":        "$1:circuit_key::INTEGER",
+            "circuit_key":       "$1:circuit_key::INTEGER",
             "circuit_short_name": "$1:circuit_short_name::VARCHAR",
             "country_code":       "$1:country_code::VARCHAR",
             "country_name":       "$1:country_name::VARCHAR",
@@ -271,7 +250,7 @@ ENDPOINTS: dict[str, dict] = {
             "date":              "$1:date::TIMESTAMP_NTZ",
             "air_temperature":   "$1:air_temperature::FLOAT",
             "track_temperature": "$1:track_temperature::FLOAT",
-            "pressure":          "$1:pressure::FLOAT",
+            "pressure":         "$1:pressure::FLOAT",
             "humidity":          "$1:humidity::FLOAT",
             "rainfall":          "$1:rainfall::BOOLEAN",
             "wind_speed":        "$1:wind_speed::FLOAT",
@@ -287,78 +266,21 @@ ENDPOINTS: dict[str, dict] = {
 def _get_json(url: str, timeout: int = 120) -> list[dict]:
     log.debug("GET %s", url)
     resp = requests.get(url, timeout=timeout)
-
+    
     try:
         resp.raise_for_status()
     except requests.exceptions.HTTPError as e:
+        # Jika API merespons 404 (Not Found), artinya data untuk 
+        # endpoint pada sesi ini memang kosong di database OpenF1.
         if resp.status_code == 404:
-            # Data untuk endpoint ini memang kosong di OpenF1 — bukan error.
-            log.warning("404 Not Found untuk %s — mengembalikan array kosong.", url)
+            log.warning("Data tidak ditemukan (404) untuk %s. Mengembalikan array kosong.", url)
             return []
-
-        # FIX-3: HTTP 422 = request tidak bisa diproses oleh server (payload terlalu
-        # besar, atau parameter tidak valid). Retry identik TIDAK akan membantu.
-        # Raise AirflowFailException agar task langsung FAILED tanpa membuang
-        # retry slot, dan operator segera mencatat error yang jelas di log.
-        if resp.status_code == 422:
-            raise AirflowFailException(
-                f"HTTP 422 Unprocessable Entity — request tidak valid atau payload terlalu besar. "
-                f"Periksa parameter dan ukuran chunk. URL: {url}"
-            ) from e
-
-        # Error lain (429 Too Many Requests, 5xx Server Error) → tetap raise HTTPError
-        # biasa agar mekanisme retry & exponential backoff Airflow terpicu.
+            
+        # Jika menerima error lain (seperti 429 Too Many Requests atau 5xx Server Error),
+        # tetap raise exception agar mekanisme retry & backoff Airflow Anda tetap terpicu.
         raise e
-
+        
     return resp.json()
-
-
-# FIX-1: Ganti requests.Request.prepare() dengan manual query-string builder.
-#
-# MASALAH LAMA:
-#   requests.Request("GET", url, params=[("date>=", val)]).prepare().url
-#   menghasilkan: ?date%3E%3D=2025-02-01T00%3A00%3A00%2B00%3A00
-#   OpenF1 tidak mengenali "date%3E%3D" sebagai operator filter,
-#   sehingga parameter tanggal DIABAIKAN sepenuhnya.
-#   Akibatnya request car_data dikirim tanpa batas waktu →
-#   respons jutaan baris → HTTP 422.
-#
-# SOLUSI BARU:
-#   Bangun query string secara manual. KEY dibiarkan literal (tidak di-encode)
-#   agar operator >= dan < terbaca oleh OpenF1. VALUE di-encode dengan
-#   quote_plus agar karakter seperti '+', ':', dan spasi aman dikirim.
-def _build_url(endpoint: str, params: list[tuple[str, object]]) -> str:
-    """
-    Membangun URL OpenF1 API dengan aman untuk parameter bertipe operator
-    seperti 'date>=' dan 'date<'.
-
-    Mengapa tidak pakai requests.prepare():
-      requests mengenkode seluruh karakter spesial di nama param, termasuk
-      '>' dan '<'. OpenF1 tidak dapat mem-parse 'date%3E%3D' sebagai filter
-      tanggal sehingga parameter tersebut diabaikan — menyebabkan 422.
-
-    Strategi di sini: enkode VALUE saja (via quote_plus), biarkan KEY literal.
-    """
-    qs = "&".join(f"{key}={quote_plus(str(value))}" for key, value in params)
-    return f"{OPENF1_BASE}/{endpoint}?{qs}"
-
-
-def _iter_time_chunks(
-    start_iso: str,
-    end_iso: str,
-    minutes: int = HEAVY_ENDPOINT_CHUNK_MINUTES,
-):
-    """
-    Memecah rentang waktu sesi menjadi beberapa potongan kecil.
-    Dipakai untuk endpoint telemetry besar agar request tidak terkena 422.
-    """
-    start = datetime.fromisoformat(start_iso.replace("Z", "+00:00"))
-    end   = datetime.fromisoformat(end_iso.replace("Z", "+00:00"))
-
-    while start < end:
-        chunk_end = min(start + timedelta(minutes=minutes), end)
-        yield start.isoformat(), chunk_end.isoformat()
-        start = chunk_end
 
 
 def _to_parquet_bytes(data: list[dict], endpoint: str) -> bytes:
@@ -371,28 +293,28 @@ def _to_parquet_bytes(data: list[dict], endpoint: str) -> bytes:
     if not df.empty:
         # 1. Bangun mapping tipe data (Snowflake -> Pandas) secara dinamis
         schema_mapping = {}
-
+        
         for col_name, sql_expr in ENDPOINTS[endpoint]["columns"].items():
             # Skip kolom jika tidak dikembalikan oleh API pada respons kali ini
             if col_name not in df.columns:
-                continue
-
+                continue 
+            
             # Ekstrak tipe data dari string (contoh: "$1:gap_to_leader::VARCHAR" -> "VARCHAR")
             snow_type = sql_expr.split("::")[-1].upper()
-
+            
             # Petakan ke Nullable Types milik Pandas yang aman terhadap NaN/Null
             if snow_type == "VARCHAR":
                 schema_mapping[col_name] = "string"
             elif snow_type == "INTEGER":
-                schema_mapping[col_name] = "Int64"    # Wajib huruf besar 'I'
+                schema_mapping[col_name] = "Int64"   # Wajib huruf besar 'I'
             elif snow_type == "FLOAT":
-                schema_mapping[col_name] = "Float64"  # Wajib huruf besar 'F'
+                schema_mapping[col_name] = "Float64" # Wajib huruf besar 'F'
             elif snow_type == "BOOLEAN":
-                schema_mapping[col_name] = "boolean"  # Wajib huruf kecil
+                schema_mapping[col_name] = "boolean" # Wajib huruf kecil
             elif snow_type == "TIMESTAMP_NTZ":
-                # Biarkan timestamp sebagai string di Parquet.
-                # Snowflake via COPY INTO sangat handal dalam mem-parsing string ISO ke TIMESTAMP.
-                schema_mapping[col_name] = "string"
+                # Biarkan timestamp sebagai string di Parquet, 
+                # Snowflake via COPY INTO sangat handal dalam mem-parsing string ISO ke TIMESTAMP
+                schema_mapping[col_name] = "string" 
             elif snow_type in {"VARIANT", "ARRAY", "OBJECT"}:
                 continue
 
@@ -400,20 +322,17 @@ def _to_parquet_bytes(data: list[dict], endpoint: str) -> bytes:
         try:
             df = df.astype(schema_mapping)
         except Exception as e:
-            log.error(
-                "Gagal enforce schema pada endpoint %s. Mapping: %s",
-                endpoint, schema_mapping,
-            )
+            log.error("Gagal enforce schema pada endpoint %s. Mapping: %s", endpoint, schema_mapping)
             raise e
 
     buf = io.BytesIO()
     df.to_parquet(buf, index=False, engine="pyarrow")
     parquet_bytes = buf.getvalue()
-
+    
     # Bebaskan memori
     del df
     buf.close()
-
+    
     return parquet_bytes
 
 
@@ -428,10 +347,10 @@ def _build_jinja_sql_template(endpoint: str, cfg: dict) -> str:
     definisi kolom di ENDPOINTS.
     """
     full_table = f"{SNOW_DB}.{SNOW_SCHEMA}.{cfg['table']}"
-    col_names  = ",\n    ".join(cfg["columns"].keys())
-    col_exprs  = ",\n        ".join(cfg["columns"].values())
+    col_names = ",\n    ".join(cfg["columns"].keys())
+    col_exprs = ",\n        ".join(cfg["columns"].values())
 
-    # Khusus untuk tabel RAW_MEETINGS, id kolomnya adalah meeting_key. Sisanya session_key.
+    # Khusus untuk tabel F1_MEETINGS, id kolomnya adalah meeting_key. Sisanya session_key.
     id_col = "meeting_key" if endpoint == "meetings" else "session_key"
     id_val = "{{ session.meeting_key }}" if endpoint == "meetings" else "{{ session.session_key }}"
 
@@ -480,10 +399,10 @@ _LOAD_SQL_TEMPLATE: str = "\n".join(
     tags=["openf1", "f1", "snowflake", "dbt"],
     doc_md=__doc__,
     default_args={
-        "retries": 3,
-        "retry_delay": timedelta(seconds=60),
-        "retry_exponential_backoff": True,
-        "max_retry_delay": timedelta(minutes=10),
+        "retries": 3,                           # Increase retries
+        "retry_delay": timedelta(seconds=60),   # Start with a 1-minute delay
+        "retry_exponential_backoff": True,      # Back off exponentially (1m, 2m, 4m...)
+        "max_retry_delay": timedelta(minutes=10), # Cap the maximum delay
         "owner": "data-engineering",
     },
 )
@@ -508,80 +427,52 @@ def openf1_session_pipeline() -> None:
             return False  # Menghentikan eksekusi task di bawahnya
 
         active_sessions = [
-            {
-                "meeting_key": s["meeting_key"],
-                "session_key": s["session_key"],
-                "date_start":  s["date_start"],
-                "date_end":    s["date_end"],
-            }
+            {"meeting_key": s["meeting_key"], "session_key": s["session_key"]}
             for s in sessions
         ]
         log.info("Ditemukan %d sesi baru: %s", len(active_sessions), active_sessions)
         log.info("url: %s", url)
         return active_sessions  # Otomatis masuk ke XCom, lalu di-expand()
 
-    # ── Task 2 : Extract (Dynamic Task Mapping — 1 worker per session) ───────
+# ── Task 2 : Extract (Dynamic Task Mapping — 1 worker per session) ───────
     @task(max_active_tis_per_dagrun=1)
     def extract_api_to_s3(session: dict) -> None:
-        sk            = session["session_key"]
-        mk            = session["meeting_key"]
-        session_start = session["date_start"]
-        session_end   = session["date_end"]
+        sk = session["session_key"]
+        mk = session["meeting_key"]
 
         s3 = S3Hook(aws_conn_id=AWS_CONN_ID)
 
         # 1. Ambil daftar pembalap terlebih dahulu untuk paginasi endpoint berat
         time.sleep(API_SLEEP_SECONDS)
-        drivers_url  = f"{OPENF1_BASE}/drivers?session_key={sk}"
+        drivers_url = f"{OPENF1_BASE}/drivers?session_key={sk}"
         drivers_data = _get_json(drivers_url)
-        driver_numbers = list({
-            d.get("driver_number")
-            for d in drivers_data
-            if d.get("driver_number") is not None
-        })
+        driver_numbers = list({d.get("driver_number") for d in drivers_data if d.get("driver_number") is not None})
 
-        for endpoint in ENDPOINTS.keys():
-
+        for idx, endpoint in enumerate(ENDPOINTS.keys()):
+            
             # 2. Fetch Data (Penanganan khusus untuk endpoint dengan payload masif)
             if endpoint in ["car_data", "location"]:
-                # Endpoint telemetry besar wajib dipecah per driver dan per rentang waktu.
-                # FIX-1 memastikan date>= dan date< benar-benar dikirim ke API
-                # (tidak di-encode menjadi date%3E%3D oleh requests).
-                data: list[dict] = []
-
+                # Wajib diloop per driver agar tidak terkena 422 Payload Too Large
+                data = []
                 for driver_no in driver_numbers:
-                    for chunk_start, chunk_end in _iter_time_chunks(session_start, session_end):
-                        time.sleep(API_SLEEP_SECONDS)
-
-                        url = _build_url(endpoint, [
-                            ("session_key",  sk),
-                            ("driver_number", driver_no),
-                            ("date>=",       chunk_start),
-                            ("date<",        chunk_end),
-                        ])
-
-                        chunk_data = _get_json(url)
-                        log.debug(
-                            "[%s] driver=%s chunk=%s→%s rows=%d",
-                            endpoint, driver_no, chunk_start, chunk_end, len(chunk_data),
-                        )
-                        data.extend(chunk_data)
-
+                    time.sleep(API_SLEEP_SECONDS)
+                    url = f"{OPENF1_BASE}/{endpoint}?session_key={sk}&driver_number={driver_no}"
+                    data.extend(_get_json(url))
+                    
             elif endpoint == "meetings":
                 time.sleep(API_SLEEP_SECONDS)
-                url  = f"{OPENF1_BASE}/meetings?meeting_key={mk}"
+                url = f"{OPENF1_BASE}/meetings?meeting_key={mk}"
                 data = _get_json(url)
-
+                
             else:
-                # intervals, laps, pit, position, sessions, stints, weather:
-                # aman ditarik hanya dengan session_key
+                # intervals dan position aman ditarik hanya dengan session_key
                 time.sleep(API_SLEEP_SECONDS)
-                url  = f"{OPENF1_BASE}/{endpoint}?session_key={sk}"
+                url = f"{OPENF1_BASE}/{endpoint}?session_key={sk}"
                 data = _get_json(url)
 
             # ── JSON → Parquet ────────────────────────────────────────────────
             parquet_bytes = _to_parquet_bytes(data, endpoint)
-            del data
+            del data 
 
             # ── Upload ke S3 ──────────────────────────────────────────────────
             s3_key = f"{S3_ROOT}/{endpoint}/meeting_key={mk}/session_key={sk}/data.parquet"
@@ -589,9 +480,9 @@ def openf1_session_pipeline() -> None:
                 bytes_data=parquet_bytes,
                 key=s3_key,
                 bucket_name=S3_BUCKET,
-                replace=True,
+                replace=True,  
             )
-            del parquet_bytes
+            del parquet_bytes 
 
             log.info(
                 "[%s] session_key=%s tersimpan → s3://%s/%s",
@@ -669,7 +560,7 @@ def openf1_session_pipeline() -> None:
     # Dynamic Task Mapping: ganti .expand() dari loop tunggal menjadi N task paralel
     extract_tasks = extract_api_to_s3.expand(session=active_sessions)
 
-    extract_tasks >> load  # >> dbt_staging >> dbt_intermediate >> dbt_marts
+    extract_tasks >> load # >> dbt_staging >> dbt_intermediate >> dbt_marts
 
 
 openf1_session_pipeline()
