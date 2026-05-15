@@ -93,7 +93,7 @@ API_SLEEP_SECONDS = 2
 
 # Ukuran pecahan waktu untuk endpoint telemetry besar seperti car_data.
 # Jika masih terkena 422, cukup turunkan menjadi 10 atau 5 menit.
-HEAVY_ENDPOINT_CHUNK_MINUTES = 15
+HEAVY_ENDPOINT_CHUNK_MINUTES = 2
 
 # ── Endpoint catalogue ────────────────────────────────────────────────────────
 # Filter berbasis tanggal telah dihapus karena kita menarik data
