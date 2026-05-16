@@ -21,6 +21,7 @@ rollup as (
         driver_number,
 
         count(*) as pit_event_count,
+
         count_if(has_stationary_stop_duration) as pit_stop_count,
 
         avg(
@@ -50,6 +51,22 @@ rollup as (
                     then lane_duration_seconds
             end
         ) as avg_pit_lane_duration_seconds,
+
+        min(
+            case
+                when is_valid_lane_duration
+                    then lane_duration_seconds
+            end
+        ) as fastest_pit_lane_duration_seconds,
+
+        max(
+            case
+                when is_valid_lane_duration
+                    then lane_duration_seconds
+            end
+        ) as slowest_pit_lane_duration_seconds,
+
+        avg(raw_pit_duration_seconds) as avg_raw_pit_duration_seconds,
 
         listagg(lap_number::string, ', ') within group (order by lap_number) as pit_laps,
 
