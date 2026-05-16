@@ -75,14 +75,53 @@ models:
         data_tests: [not_null]
 
   - name: stg_openf1__pit
-    description: Cleaned pit stop records.
+    description: Cleaned pit stop data from OpenF1 raw pit table.
     columns:
       - name: pit_stop_id
-        data_tests: [not_null, unique]
+        description: Surrogate key for pit event.
+        data_tests:
+          - not_null
+          - unique
+      - name: meeting_key
+        description: OpenF1 meeting key.
+      - name: session_key
+        description: OpenF1 session key.
+        data_tests:
+          - not_null
+      - name: driver_number
+        description: Driver number.
+        data_tests:
+          - not_null
       - name: pit_at
-        data_tests: [not_null]
-      - name: pit_duration_seconds
-        data_tests: [non_negative]
+        description: Pit event timestamp.
+        data_tests:
+          - not_null
+      - name: event_date
+        description: Pit event date.
+      - name: lap_number
+        description: Lap number when pit event occurred.
+      - name: raw_pit_duration_seconds
+        description: Deprecated OpenF1 pit_duration field. Same meaning as lane_duration.
+        data_tests:
+          - non_negative
+      - name: lane_duration_seconds
+        description: Time spent in pit lane.
+        data_tests:
+          - non_negative
+      - name: stop_duration_seconds
+        description: Stationary time in pit box.
+        data_tests:
+          - non_negative
+      - name: pit_stop_duration_seconds
+        description: Main pit stop metric based on stop_duration_seconds.
+        data_tests:
+          - non_negative
+      - name: has_stationary_stop_duration
+        description: True if stop_duration_seconds is available.
+      - name: is_valid_stationary_stop_duration
+        description: True if stop_duration_seconds is within accepted analytical range.
+      - name: is_valid_lane_duration
+        description: True if lane_duration_seconds is within accepted analytical range.
 
   - name: stg_openf1__position
     description: Cleaned and deduplicated driver position snapshots.
@@ -115,7 +154,7 @@ models:
       - name: compound
         data_tests:
           - accepted_values:
-              values: ['SOFT', 'MEDIUM', 'HARD', 'INTERMEDIATE', 'WET','TEST_UNKNOWN']
+              values: ['SOFT', 'MEDIUM', 'HARD', 'INTERMEDIATE', 'WET', 'UNKNOWN', 'TEST_UNKNOWN']
               config:
                 severity: warn
 
