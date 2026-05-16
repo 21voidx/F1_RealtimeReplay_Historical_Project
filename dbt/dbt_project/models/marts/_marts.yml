@@ -1,95 +1,22 @@
 version: 2
 
 models:
-  - name: dim_openf1__meetings
-    description: Meeting dimension for Formula 1 race weekends.
-    columns:
-      - name: meeting_key
-        data_tests: [not_null, unique]
-
-  - name: dim_openf1__sessions
-    description: Session dimension enriched with meeting metadata.
-    columns:
-      - name: session_key
-        data_tests: [not_null, unique]
-      - name: session_display_name
-        data_tests: [not_null]
-
-  - name: dim_openf1__drivers
-    description: Driver dimension at session-driver grain.
-    columns:
-      - name: session_driver_id
-        data_tests: [not_null, unique]
-      - name: session_key
-        data_tests: [not_null]
-      - name: driver_number
-        data_tests: [not_null]
-
-  - name: fct_openf1__laps
-    description: Lap-level fact table enriched with driver and session metadata.
+  - name: fct_openf1__lap_gap_evolution
+    description: Lap-level race and sprint gap, interval, position, pit, and sector metrics.
     columns:
       - name: lap_id
         data_tests: [not_null, unique]
-      - name: lap_duration_seconds
-        data_tests: [non_negative]
-
-  - name: fct_openf1__car_telemetry_1min
-    description: One-minute telemetry aggregate designed for Grafana time-series panels.
+  - name: fct_openf1__telemetry_lap_driver
+    description: Lap-level telemetry summary by driver.
     columns:
-      - name: telemetry_minute_id
-        data_tests: [not_null, unique]
-      - name: sample_minute
+      - name: lap_id
         data_tests: [not_null]
-      - name: avg_speed
+      - name: telemetry_sample_count
         data_tests: [non_negative]
-
-  - name: fct_openf1__position_timeseries
-    description: One-minute latest position snapshot per driver.
+  - name: fct_openf1__tyre_weather_lap_context
+    description: Lap-level tyre, stint, weather, and pace context.
     columns:
-      - name: position_minute_id
-        data_tests: [not_null, unique]
-      - name: position
-        data_tests:
-          - accepted_range:
-              min_value: 1
-              max_value: 30
-
-  - name: fct_openf1__weather_5min
-    description: Five-minute weather aggregate for session analysis.
-    columns:
-      - name: weather_5min_id
-        data_tests: [not_null, unique]
-      - name: avg_humidity
-        data_tests:
-          - accepted_range:
-              min_value: 0
-              max_value: 100
-
-  - name: fct_openf1__driver_session_summary
-    description: One row per session-driver with race, telemetry, pit, tyre, and final position metrics.
-    columns:
-      - name: session_driver_id
+      - name: lap_id
         data_tests: [not_null]
-      - name: best_lap_seconds
-        data_tests:
-          - non_negative:
-              config:
-                where: "best_lap_seconds is not null"
-
-  - name: fct_openf1__race_leaderboard
-    description: Historical race and sprint leaderboard table for dashboard tables.
-    columns:
-      - name: leaderboard_id
-        data_tests: [not_null, unique]
-
-  - name: fct_openf1__tyre_stint_performance
-    description: Tyre stint fact table joined to lap performance.
-    columns:
-      - name: stint_id
-        data_tests: [not_null, unique]
-
-  - name: mart_openf1__session_summary
-    description: Dashboard-ready session-level aggregate.
-    columns:
-      - name: session_key
-        data_tests: [not_null, unique]
+  - name: fct_openf1__optimal_tyre_life
+    description: Best observed tyre age per compound and circuit by average lap time.

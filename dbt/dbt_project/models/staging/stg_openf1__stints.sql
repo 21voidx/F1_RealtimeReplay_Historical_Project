@@ -27,10 +27,7 @@ renamed as (
         lap_start,
         lap_end,
         case
-            when lap_start is not null
-             and lap_end is not null
-             and lap_end >= lap_start
-                then lap_end - lap_start + 1
+            when lap_start is not null and lap_end is not null and lap_end >= lap_start then lap_end - lap_start + 1
             else null
         end as stint_lap_count,
         compound,

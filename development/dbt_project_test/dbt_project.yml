@@ -1,0 +1,56 @@
+name: f1_pipeline
+version: 2.0.0
+config-version: 2
+profile: f1_pipeline
+require-dbt-version: [">=1.11.0", "<1.12.0"]
+
+model-paths: ["models"]
+analysis-paths: ["analyses"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+snapshot-paths: ["snapshots"]
+
+target-path: target
+clean-targets:
+  - target
+  - dbt_packages
+  - logs
+
+vars:
+  incremental_lookback_days: 3
+  telemetry_rollup_minutes: 1
+  weather_rollup_minutes: 5
+  query_tag_prefix: openf1_dbt
+
+models:
+  f1_pipeline:
+    +persist_docs:
+      relation: true
+      columns: true
+    +on_schema_change: sync_all_columns
+    staging:
+      +schema: stg
+      +materialized: view
+      +tags: ["staging"]
+      +query_tag: openf1_staging
+    intermediate:
+      +schema: int
+      +materialized: view
+      +tags: ["intermediate"]
+      +query_tag: openf1_intermediate
+    marts:
+      +schema: mart
+      +materialized: table
+      +transient: false
+      +tags: ["mart", "gold"]
+      +query_tag: openf1_mart
+
+seeds:
+  f1_pipeline:
+    +schema: seed
+    +quote_columns: false
+
+tests:
+  +store_failures: true
+  +schema: dq

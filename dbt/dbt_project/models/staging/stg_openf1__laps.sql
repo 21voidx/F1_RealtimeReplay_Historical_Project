@@ -12,10 +12,10 @@ with source as (
         duration_sector_3::float as sector_3_seconds,
         i1_speed::number as i1_speed,
         i2_speed::number as i2_speed,
-        st_speed::number as speed_trap,
-        segments_sector_1,
-        segments_sector_2,
-        segments_sector_3
+        st_speed::number as st_speed,
+        segments_sector_1 as segments_sector_1,
+        segments_sector_2 as segments_sector_2,
+        segments_sector_3 as segments_sector_3
     from {{ source('openf1_raw', 'raw_laps') }}
     where session_key is not null
       and driver_number is not null
@@ -28,21 +28,34 @@ renamed as (
         meeting_key,
         session_key,
         driver_number,
-        lap_number,
         lap_start_at,
-        iff(lap_duration_seconds is not null, dateadd('millisecond', lap_duration_seconds * 1000, lap_start_at), null) as lap_end_at,
-        to_date(lap_start_at) as event_date,
+        lead(lap_start_at) over (
+            partition by session_key, driver_number
+            order by lap_number
+        ) as next_lap_start_at,
         lap_duration_seconds,
+        lap_number,
+        coalesce(is_pit_out_lap, false) as is_pit_out_lap,
         sector_1_seconds,
         sector_2_seconds,
         sector_3_seconds,
         i1_speed,
         i2_speed,
-        speed_trap,
-        is_pit_out_lap,
+        st_speed,
+        greatest_ignore_nulls(i1_speed, i2_speed, st_speed) as max_lap_speed,
         segments_sector_1,
         segments_sector_2,
-        segments_sector_3
+        segments_sector_3,
+        case
+            when lap_duration_seconds between {{ var('valid_lap_min_seconds', 40) }} and {{ var('valid_lap_max_seconds', 300) }} then true
+            else false
+        end as is_valid_lap_time,
+        case
+            when sector_1_seconds between {{ var('valid_sector_min_seconds', 5) }} and {{ var('valid_sector_max_seconds', 120) }}
+             and sector_2_seconds between {{ var('valid_sector_min_seconds', 5) }} and {{ var('valid_sector_max_seconds', 120) }}
+             and sector_3_seconds between {{ var('valid_sector_min_seconds', 5) }} and {{ var('valid_sector_max_seconds', 120) }} then true
+            else false
+        end as is_valid_sector_time
     from source
 )
 

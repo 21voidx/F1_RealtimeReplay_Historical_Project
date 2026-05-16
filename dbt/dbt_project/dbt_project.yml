@@ -1,56 +1,53 @@
 name: f1_pipeline
-version: 2.0.0
+version: '1.0.0'
 config-version: 2
+
 profile: f1_pipeline
-require-dbt-version: [">=1.11.0", "<1.12.0"]
 
 model-paths: ["models"]
-analysis-paths: ["analyses"]
+macro-paths: ["macros"]
 test-paths: ["tests"]
 seed-paths: ["seeds"]
-macro-paths: ["macros"]
-snapshot-paths: ["snapshots"]
 
 target-path: target
 clean-targets:
   - target
   - dbt_packages
-  - logs
 
 vars:
   incremental_lookback_days: 3
-  telemetry_rollup_minutes: 1
-  weather_rollup_minutes: 5
-  query_tag_prefix: openf1_dbt
+  telemetry_min_sample_count: 3
+  valid_lap_min_seconds: 40
+  valid_lap_max_seconds: 300
+  valid_sector_min_seconds: 5
+  valid_sector_max_seconds: 120
+  tyre_min_sample_laps: 5
 
 models:
   f1_pipeline:
     +persist_docs:
       relation: true
       columns: true
-    +on_schema_change: sync_all_columns
+    +transient: true
     staging:
       +schema: stg
       +materialized: view
-      +tags: ["staging"]
-      +query_tag: openf1_staging
+      +tags: ['staging', 'silver']
     intermediate:
       +schema: int
-      +materialized: view
-      +tags: ["intermediate"]
-      +query_tag: openf1_intermediate
+      +materialized: table
+      +tags: ['intermediate', 'silver']
     marts:
       +schema: mart
       +materialized: table
-      +transient: false
-      +tags: ["mart", "gold"]
-      +query_tag: openf1_mart
+      +tags: ['mart', 'gold']
+      lap_on_lap:
+        +tags: ['lap_on_lap']
+      telemetry:
+        +tags: ['telemetry']
+      tyre_weather:
+        +tags: ['tyre_weather']
 
 seeds:
   f1_pipeline:
     +schema: seed
-    +quote_columns: false
-
-tests:
-  +store_failures: true
-  +schema: dq

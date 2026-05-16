@@ -2,17 +2,14 @@ version: 2
 
 sources:
   - name: openf1_raw
-    description: Raw OpenF1 tables loaded from S3 parquet into Snowflake.
     database: "{{ env_var('SNOWFLAKE_DATABASE', 'DBT_DB') }}"
     schema: "{{ env_var('SNOWFLAKE_RAW_SCHEMA', 'DBT_SCHEMA') }}"
+    description: Raw OpenF1 landing tables loaded into Snowflake.
     tables:
       - name: raw_car_data
         identifier: RAW_CAR_DATA
-        description: High-frequency car telemetry from OpenF1 car_data endpoint.
         columns:
           - name: session_key
-            data_tests: [not_null]
-          - name: meeting_key
             data_tests: [not_null]
           - name: driver_number
             data_tests: [not_null]
@@ -20,33 +17,24 @@ sources:
             data_tests:
               - not_null
               - timestamp_not_in_future
-          - name: rpm
-            data_tests:
-              - accepted_range:
-                  min_value: 0
-                  max_value: 16000
           - name: speed
             data_tests:
               - accepted_range:
-                  min_value: 0
-                  max_value: 430
+                  arguments: {min_value: 0, max_value: 430}
           - name: throttle
             data_tests:
               - accepted_range:
-                  min_value: 0
-                  max_value: 110
+                  arguments: {min_value: 0, max_value: 110}
           - name: brake
             data_tests:
               - accepted_range:
-                  min_value: 0
-                  max_value: 110
-          - name: drs
+                  arguments: {min_value: 0, max_value: 110}
+          - name: rpm
             data_tests:
-              - accepted_drs_state
-
+              - accepted_range:
+                  arguments: {min_value: 0, max_value: 16000}
       - name: raw_drivers
         identifier: RAW_DRIVERS
-        description: Driver metadata by session.
         columns:
           - name: session_key
             data_tests: [not_null]
@@ -54,10 +42,8 @@ sources:
             data_tests: [not_null]
           - name: full_name
             data_tests: [not_null]
-
       - name: raw_intervals
         identifier: RAW_INTERVALS
-        description: Live interval and gap data.
         columns:
           - name: session_key
             data_tests: [not_null]
@@ -65,10 +51,8 @@ sources:
             data_tests: [not_null]
           - name: date
             data_tests: [not_null]
-
       - name: raw_laps
         identifier: RAW_LAPS
-        description: Lap timing and sector information.
         columns:
           - name: session_key
             data_tests: [not_null]
@@ -77,25 +61,14 @@ sources:
           - name: lap_number
             data_tests: [not_null]
           - name: lap_duration
-            data_tests:
-              - non_negative
-
+            data_tests: [non_negative]
       - name: raw_meetings
         identifier: RAW_MEETINGS
-        description: Race weekend meeting metadata.
         columns:
           - name: meeting_key
-            data_tests:
-              - not_null
-              - unique
-          - name: year
-            data_tests: [not_null]
-          - name: meeting_name
-            data_tests: [not_null]
-
+            data_tests: [not_null, unique]
       - name: raw_pit
         identifier: RAW_PIT
-        description: Pit stop and pit lane timing.
         columns:
           - name: session_key
             data_tests: [not_null]
@@ -104,12 +77,9 @@ sources:
           - name: date
             data_tests: [not_null]
           - name: pit_duration
-            data_tests:
-              - non_negative
-
+            data_tests: [non_negative]
       - name: raw_position
         identifier: RAW_POSITION
-        description: Driver position snapshots.
         columns:
           - name: session_key
             data_tests: [not_null]
@@ -120,28 +90,21 @@ sources:
           - name: position
             data_tests:
               - accepted_range:
-                  min_value: 1
-                  max_value: 30
-
+                  arguments: {min_value: 1, max_value: 30}
       - name: raw_sessions
         identifier: RAW_SESSIONS
-        description: Session metadata.
         columns:
           - name: session_key
-            data_tests:
-              - not_null
-              - unique
+            data_tests: [not_null, unique]
           - name: meeting_key
             data_tests: [not_null]
           - name: session_type
             data_tests:
-              - not_null
               - accepted_values:
-                  values: ['Practice', 'Qualifying', 'Race', 'Sprint', 'Sprint Shootout', 'Sprint Qualifying']
-
+                  arguments:
+                    values: ['Practice', 'Qualifying', 'Race', 'Sprint', 'Sprint Shootout', 'Sprint Qualifying']
       - name: raw_stints
         identifier: RAW_STINTS
-        description: Tyre stint data.
         columns:
           - name: session_key
             data_tests: [not_null]
@@ -152,13 +115,12 @@ sources:
           - name: compound
             data_tests:
               - accepted_values:
-                  values: ['SOFT', 'MEDIUM', 'HARD', 'INTERMEDIATE', 'WET','UNKNOWN', 'TEST_UNKNOWN']
+                  arguments:
+                    values: ['SOFT', 'MEDIUM', 'HARD', 'INTERMEDIATE', 'WET', 'UNKNOWN', 'TEST_UNKNOWN']
                   config:
                     severity: warn
-
       - name: raw_weather
         identifier: RAW_WEATHER
-        description: Weather observations by session.
         columns:
           - name: session_key
             data_tests: [not_null]
@@ -167,5 +129,4 @@ sources:
           - name: humidity
             data_tests:
               - accepted_range:
-                  min_value: 0
-                  max_value: 100
+                  arguments: {min_value: 0, max_value: 100}

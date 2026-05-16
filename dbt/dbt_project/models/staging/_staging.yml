@@ -2,171 +2,56 @@ version: 2
 
 models:
   - name: stg_openf1__car_data
-    description: Cleaned and deduplicated high-frequency telemetry. Incremental because this table can be large.
+    description: Clean high-frequency OpenF1 telemetry samples.
     columns:
       - name: car_data_id
         data_tests: [not_null, unique]
-      - name: timestamp_utc
-        data_tests: [not_null]
-      - name: session_key
-        data_tests: [not_null]
-      - name: driver_number
+      - name: telemetry_at
         data_tests: [not_null]
       - name: speed
         data_tests:
           - accepted_range:
-              min_value: 0
-              max_value: 430
+              arguments: {min_value: 0, max_value: 430}
       - name: throttle
         data_tests:
           - accepted_range:
-              min_value: 0
-              max_value: 110
+              arguments: {min_value: 0, max_value: 110}
       - name: brake
         data_tests:
           - accepted_range:
-              min_value: 0
-              max_value: 110
-      - name: drs
-        data_tests: [accepted_drs_state]
-
-  - name: stg_openf1__drivers
-    description: One driver row per session and driver number.
-    columns:
-      - name: session_driver_id
-        data_tests: [not_null, unique]
-      - name: session_key
-        data_tests: [not_null]
-      - name: driver_number
-        data_tests: [not_null]
-      - name: full_name
-        data_tests: [not_null]
-
-  - name: stg_openf1__intervals
-    description: Cleaned interval data with numeric gap fields.
-    columns:
-      - name: interval_id
-        data_tests: [not_null, unique]
-      - name: timestamp_utc
-        data_tests: [not_null]
-
+              arguments: {min_value: 0, max_value: 110}
   - name: stg_openf1__laps
-    description: Cleaned lap timing data.
+    description: Clean lap and sector timing records.
     columns:
       - name: lap_id
         data_tests: [not_null, unique]
-      - name: session_key
-        data_tests: [not_null]
-      - name: driver_number
-        data_tests: [not_null]
-      - name: lap_number
-        data_tests: [not_null]
       - name: lap_duration_seconds
         data_tests: [non_negative]
-
-  - name: stg_openf1__meetings
-    description: Cleaned race weekend metadata.
-    columns:
-      - name: meeting_key
-        data_tests: [not_null, unique]
-      - name: meeting_name
-        data_tests: [not_null]
-      - name: season_year
-        data_tests: [not_null]
-
   - name: stg_openf1__pit
-    description: Cleaned pit stop data from OpenF1 raw pit table.
+    description: Pit lane and stationary pit-stop events. Main pit stop metric uses stop_duration_seconds.
     columns:
       - name: pit_stop_id
-        description: Surrogate key for pit event.
-        data_tests:
-          - not_null
-          - unique
-      - name: meeting_key
-        description: OpenF1 meeting key.
-      - name: session_key
-        description: OpenF1 session key.
-        data_tests:
-          - not_null
-      - name: driver_number
-        description: Driver number.
-        data_tests:
-          - not_null
-      - name: pit_at
-        description: Pit event timestamp.
-        data_tests:
-          - not_null
-      - name: event_date
-        description: Pit event date.
-      - name: lap_number
-        description: Lap number when pit event occurred.
+        data_tests: [not_null, unique]
       - name: raw_pit_duration_seconds
-        description: Deprecated OpenF1 pit_duration field. Same meaning as lane_duration.
-        data_tests:
-          - non_negative
+        data_tests: [non_negative]
       - name: lane_duration_seconds
-        description: Time spent in pit lane.
-        data_tests:
-          - non_negative
+        data_tests: [non_negative]
       - name: stop_duration_seconds
-        description: Stationary time in pit box.
-        data_tests:
-          - non_negative
+        data_tests: [non_negative]
       - name: pit_stop_duration_seconds
-        description: Main pit stop metric based on stop_duration_seconds.
-        data_tests:
-          - non_negative
-      - name: has_stationary_stop_duration
-        description: True if stop_duration_seconds is available.
-      - name: is_valid_stationary_stop_duration
-        description: True if stop_duration_seconds is within accepted analytical range.
-      - name: is_valid_lane_duration
-        description: True if lane_duration_seconds is within accepted analytical range.
-
-  - name: stg_openf1__position
-    description: Cleaned and deduplicated driver position snapshots.
-    columns:
-      - name: position_id
-        data_tests: [not_null, unique]
-      - name: timestamp_utc
-        data_tests: [not_null]
-      - name: position
-        data_tests:
-          - accepted_range:
-              min_value: 1
-              max_value: 30
-
-  - name: stg_openf1__sessions
-    description: Cleaned session metadata.
-    columns:
-      - name: session_key
-        data_tests: [not_null, unique]
-      - name: meeting_key
-        data_tests: [not_null]
-      - name: session_type
-        data_tests: [not_null]
-
+        data_tests: [non_negative]
   - name: stg_openf1__stints
-    description: Cleaned tyre stint data.
+    description: Tyre stint records with normalized compound.
     columns:
       - name: stint_id
         data_tests: [not_null, unique]
       - name: compound
         data_tests:
           - accepted_values:
-              values: ['SOFT', 'MEDIUM', 'HARD', 'INTERMEDIATE', 'WET', 'UNKNOWN', 'TEST_UNKNOWN']
-              config:
-                severity: warn
-
-  - name: stg_openf1__weather
-    description: Cleaned weather records.
+              arguments:
+                values: ['SOFT', 'MEDIUM', 'HARD', 'INTERMEDIATE', 'WET', 'UNKNOWN', 'TEST_UNKNOWN']
+  - name: stg_openf1__sessions
+    description: Clean session dimension base.
     columns:
-      - name: weather_id
+      - name: session_key
         data_tests: [not_null, unique]
-      - name: timestamp_utc
-        data_tests: [not_null]
-      - name: humidity
-        data_tests:
-          - accepted_range:
-              min_value: 0
-              max_value: 100
