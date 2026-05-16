@@ -6,7 +6,10 @@ with source as (
         stint_number::number as stint_number,
         lap_start::number as lap_start,
         lap_end::number as lap_end,
-        upper({{ nullif_text('compound') }}) as compound,
+        case
+            when {{ nullif_text('compound') }} is null then 'UNKNOWN'
+            else upper({{ nullif_text('compound') }})
+        end as compound,
         tyre_age_at_start::number as tyre_age_at_start
     from {{ source('openf1_raw', 'raw_stints') }}
     where session_key is not null
@@ -23,7 +26,13 @@ renamed as (
         stint_number,
         lap_start,
         lap_end,
-        greatest(lap_end - lap_start + 1, 0) as stint_lap_count,
+        case
+            when lap_start is not null
+             and lap_end is not null
+             and lap_end >= lap_start
+                then lap_end - lap_start + 1
+            else null
+        end as stint_lap_count,
         compound,
         tyre_age_at_start
     from source

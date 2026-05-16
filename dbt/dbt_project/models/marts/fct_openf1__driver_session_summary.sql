@@ -24,7 +24,7 @@ select
     l.avg_sector_1_seconds,
     l.avg_sector_2_seconds,
     l.avg_sector_3_seconds,
-    greatest(coalesce(l.max_lap_speed, 0), coalesce(t.max_speed, 0)) as max_speed,
+    greatest_ignore_nulls(l.max_lap_speed, t.max_speed) as max_speed,
     t.avg_speed,
     t.avg_rpm,
     coalesce(p.pit_stop_count, 0) as pit_stop_count,

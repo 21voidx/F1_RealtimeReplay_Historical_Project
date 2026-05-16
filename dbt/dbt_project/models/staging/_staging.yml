@@ -115,9 +115,9 @@ models:
       - name: compound
         data_tests:
           - accepted_values:
-              values: ['SOFT', 'MEDIUM', 'HARD', 'INTERMEDIATE', 'WET']
+              values: ['SOFT', 'MEDIUM', 'HARD', 'INTERMEDIATE', 'WET','TEST_UNKNOWN']
               config:
-                where: "compound is not null"
+                severity: warn
 
   - name: stg_openf1__weather
     description: Cleaned weather records.

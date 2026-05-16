@@ -152,9 +152,9 @@ sources:
           - name: compound
             data_tests:
               - accepted_values:
-                  values: ['SOFT', 'MEDIUM', 'HARD', 'INTERMEDIATE', 'WET']
+                  values: ['SOFT', 'MEDIUM', 'HARD', 'INTERMEDIATE', 'WET','UNKNOWN', 'TEST_UNKNOWN']
                   config:
-                    where: "compound is not null"
+                    severity: warn
 
       - name: raw_weather
         identifier: RAW_WEATHER

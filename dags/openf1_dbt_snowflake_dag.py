@@ -94,7 +94,7 @@ DBT_ENV: dict[str, str] = {
     "DBT_PROJECT_DIR": DBT_PROJECT_CONTAINER_PATH,
     "DBT_TARGET": "{{ dag_run.conf.get('target', 'dev') if dag_run and dag_run.conf else 'dev' }}",
     "DBT_THREADS": "{{ dag_run.conf.get('threads', 4) if dag_run and dag_run.conf else 4 }}",
-    "DBT_FULL_REFRESH": "{{ dag_run.conf.get('full_refresh', false) if dag_run and dag_run.conf else false }}",
+    "DBT_FULL_REFRESH": "{{ dag_run.conf.get('full_refresh', true) if dag_run and dag_run.conf else false }}",
     "DBT_VARS": "{{ dag_run.conf.get('vars', '{}') if dag_run and dag_run.conf else '{}' }}",
 }
 
