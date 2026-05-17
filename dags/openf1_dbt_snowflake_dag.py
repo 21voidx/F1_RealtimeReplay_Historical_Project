@@ -94,7 +94,7 @@ DBT_ENV: dict[str, str] = {
     "DBT_PROJECT_DIR": DBT_PROJECT_CONTAINER_PATH,
     "DBT_TARGET": "{{ dag_run.conf.get('target', 'dev') if dag_run and dag_run.conf else 'dev' }}",
     "DBT_THREADS": "{{ dag_run.conf.get('threads', 4) if dag_run and dag_run.conf else 4 }}",
-    "DBT_FULL_REFRESH": "{{ dag_run.conf.get('full_refresh', true) if dag_run and dag_run.conf else false }}",
+    "DBT_FULL_REFRESH": "{{ dag_run.conf.get('full_refresh', true) if dag_run and dag_run.conf else true }}",
     "DBT_VARS": "{{ dag_run.conf.get('vars', '{}') if dag_run and dag_run.conf else '{}' }}",
 }
 
@@ -138,7 +138,7 @@ set -euo pipefail
 
 cd "${DBT_PROJECT_DIR}"
 
-FULL_REFRESH_VALUE="$(echo "${DBT_FULL_REFRESH:-false}" | tr '[:upper:]' '[:lower:]')"
+FULL_REFRESH_VALUE="$(echo "${DBT_FULL_REFRESH:-true}" | tr '[:upper:]' '[:lower:]')"
 FULL_REFRESH_FLAG=""
 if [ "${FULL_REFRESH_VALUE}" = "true" ] || [ "${FULL_REFRESH_VALUE}" = "1" ] || [ "${FULL_REFRESH_VALUE}" = "yes" ]; then
   FULL_REFRESH_FLAG="--full-refresh"
