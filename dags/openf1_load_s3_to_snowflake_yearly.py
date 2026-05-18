@@ -378,7 +378,7 @@ _LOAD_SQL_TEMPLATE: str = "\n".join(
     schedule=CronDataIntervalTimetable("0 0 15 5 *", timezone="UTC"),
     start_date=datetime(2024, 1, 1),
     catchup=True,
-    max_active_runs=1,
+    max_active_runs=2,
     tags=["openf1", "snowflake", "load-only"],
     default_args={
         "owner": "data-engineering",
