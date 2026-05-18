@@ -1,0 +1,132 @@
+version: 2
+
+sources:
+  - name: openf1_raw
+    database: "{{ env_var('SNOWFLAKE_DATABASE', 'DBT_DB') }}"
+    schema: "{{ env_var('SNOWFLAKE_RAW_SCHEMA', 'DBT_SCHEMA') }}"
+    description: Raw OpenF1 landing tables loaded into Snowflake.
+    tables:
+      - name: raw_car_data
+        identifier: RAW_CAR_DATA
+        columns:
+          - name: session_key
+            data_tests: [not_null]
+          - name: driver_number
+            data_tests: [not_null]
+          - name: date
+            data_tests:
+              - not_null
+              - timestamp_not_in_future
+          - name: speed
+            data_tests:
+              - accepted_range:
+                  arguments: {min_value: 0, max_value: 430}
+          - name: throttle
+            data_tests:
+              - accepted_range:
+                  arguments: {min_value: 0, max_value: 110}
+          - name: brake
+            data_tests:
+              - accepted_range:
+                  arguments: {min_value: 0, max_value: 110}
+          - name: rpm
+            data_tests:
+              - accepted_range:
+                  arguments: {min_value: 0, max_value: 16000}
+      - name: raw_drivers
+        identifier: RAW_DRIVERS
+        columns:
+          - name: session_key
+            data_tests: [not_null]
+          - name: driver_number
+            data_tests: [not_null]
+          - name: full_name
+            data_tests: [not_null]
+      - name: raw_intervals
+        identifier: RAW_INTERVALS
+        columns:
+          - name: session_key
+            data_tests: [not_null]
+          - name: driver_number
+            data_tests: [not_null]
+          - name: date
+            data_tests: [not_null]
+      - name: raw_laps
+        identifier: RAW_LAPS
+        columns:
+          - name: session_key
+            data_tests: [not_null]
+          - name: driver_number
+            data_tests: [not_null]
+          - name: lap_number
+            data_tests: [not_null]
+          - name: lap_duration
+            data_tests: [non_negative]
+      - name: raw_meetings
+        identifier: RAW_MEETINGS
+        columns:
+          - name: meeting_key
+            data_tests: [not_null, unique]
+      - name: raw_pit
+        identifier: RAW_PIT
+        columns:
+          - name: session_key
+            data_tests: [not_null]
+          - name: driver_number
+            data_tests: [not_null]
+          - name: date
+            data_tests: [not_null]
+          - name: pit_duration
+            data_tests: [non_negative]
+      - name: raw_position
+        identifier: RAW_POSITION
+        columns:
+          - name: session_key
+            data_tests: [not_null]
+          - name: driver_number
+            data_tests: [not_null]
+          - name: date
+            data_tests: [not_null]
+          - name: position
+            data_tests:
+              - accepted_range:
+                  arguments: {min_value: 1, max_value: 30}
+      - name: raw_sessions
+        identifier: RAW_SESSIONS
+        columns:
+          - name: session_key
+            data_tests: [not_null, unique]
+          - name: meeting_key
+            data_tests: [not_null]
+          - name: session_type
+            data_tests:
+              - accepted_values:
+                  arguments:
+                    values: ['Practice', 'Qualifying', 'Race', 'Sprint', 'Sprint Shootout', 'Sprint Qualifying']
+      - name: raw_stints
+        identifier: RAW_STINTS
+        columns:
+          - name: session_key
+            data_tests: [not_null]
+          - name: driver_number
+            data_tests: [not_null]
+          - name: stint_number
+            data_tests: [not_null]
+          - name: compound
+            data_tests:
+              - accepted_values:
+                  arguments:
+                    values: ['SOFT', 'MEDIUM', 'HARD', 'INTERMEDIATE', 'WET', 'UNKNOWN', 'TEST_UNKNOWN']
+                  config:
+                    severity: warn
+      - name: raw_weather
+        identifier: RAW_WEATHER
+        columns:
+          - name: session_key
+            data_tests: [not_null]
+          - name: date
+            data_tests: [not_null]
+          - name: humidity
+            data_tests:
+              - accepted_range:
+                  arguments: {min_value: 0, max_value: 100}

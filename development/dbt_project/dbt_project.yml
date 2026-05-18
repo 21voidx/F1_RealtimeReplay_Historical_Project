@@ -1,0 +1,53 @@
+name: f1_pipeline
+version: '1.0.0'
+config-version: 2
+
+profile: f1_pipeline
+
+model-paths: ["models"]
+macro-paths: ["macros"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+
+target-path: target
+clean-targets:
+  - target
+  - dbt_packages
+
+vars:
+  incremental_lookback_days: 3
+  telemetry_min_sample_count: 3
+  valid_lap_min_seconds: 40
+  valid_lap_max_seconds: 300
+  valid_sector_min_seconds: 5
+  valid_sector_max_seconds: 120
+  tyre_min_sample_laps: 5
+
+models:
+  f1_pipeline:
+    +persist_docs:
+      relation: true
+      columns: true
+    +transient: true
+    staging:
+      +schema: stg
+      +materialized: view
+      +tags: ['staging', 'silver']
+    intermediate:
+      +schema: int
+      +materialized: table
+      +tags: ['intermediate', 'silver']
+    marts:
+      +schema: mart
+      +materialized: table
+      +tags: ['mart', 'gold']
+      lap_on_lap:
+        +tags: ['lap_on_lap']
+      telemetry:
+        +tags: ['telemetry']
+      tyre_weather:
+        +tags: ['tyre_weather']
+
+seeds:
+  f1_pipeline:
+    +schema: seed

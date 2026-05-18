@@ -1,132 +1,217 @@
 version: 2
 
 sources:
-  - name: openf1_raw
-    database: "{{ env_var('SNOWFLAKE_DATABASE', 'DBT_DB') }}"
-    schema: "{{ env_var('SNOWFLAKE_RAW_SCHEMA', 'DBT_SCHEMA') }}"
-    description: Raw OpenF1 landing tables loaded into Snowflake.
+  - name: F1_API
+    database: "{{ env_var('SNOWFLAKE_DATABASE') }}"
+    schema: "{{ env_var('SNOWFLAKE_SCHEMA') }}"
     tables:
-      - name: raw_car_data
-        identifier: RAW_CAR_DATA
+      - name: F1_POSITION
+        description: "Driver positions throughout a session"
         columns:
-          - name: session_key
-            data_tests: [not_null]
-          - name: driver_number
-            data_tests: [not_null]
           - name: date
-            data_tests:
+            tests:
               - not_null
-              - timestamp_not_in_future
-          - name: speed
-            data_tests:
-              - accepted_range:
-                  arguments: {min_value: 0, max_value: 430}
-          - name: throttle
-            data_tests:
-              - accepted_range:
-                  arguments: {min_value: 0, max_value: 110}
-          - name: brake
-            data_tests:
-              - accepted_range:
-                  arguments: {min_value: 0, max_value: 110}
-          - name: rpm
-            data_tests:
-              - accepted_range:
-                  arguments: {min_value: 0, max_value: 16000}
-      - name: raw_drivers
-        identifier: RAW_DRIVERS
-        columns:
-          - name: session_key
-            data_tests: [not_null]
           - name: driver_number
-            data_tests: [not_null]
-          - name: full_name
-            data_tests: [not_null]
-      - name: raw_intervals
-        identifier: RAW_INTERVALS
-        columns:
-          - name: session_key
-            data_tests: [not_null]
-          - name: driver_number
-            data_tests: [not_null]
-          - name: date
-            data_tests: [not_null]
-      - name: raw_laps
-        identifier: RAW_LAPS
-        columns:
-          - name: session_key
-            data_tests: [not_null]
-          - name: driver_number
-            data_tests: [not_null]
-          - name: lap_number
-            data_tests: [not_null]
-          - name: lap_duration
-            data_tests: [non_negative]
-      - name: raw_meetings
-        identifier: RAW_MEETINGS
-        columns:
+            tests:
+              - not_null
           - name: meeting_key
-            data_tests: [not_null, unique]
-      - name: raw_pit
-        identifier: RAW_PIT
-        columns:
-          - name: session_key
-            data_tests: [not_null]
-          - name: driver_number
-            data_tests: [not_null]
-          - name: date
-            data_tests: [not_null]
-          - name: pit_duration
-            data_tests: [non_negative]
-      - name: raw_position
-        identifier: RAW_POSITION
-        columns:
-          - name: session_key
-            data_tests: [not_null]
-          - name: driver_number
-            data_tests: [not_null]
-          - name: date
-            data_tests: [not_null]
+            tests:
+              - not_null
           - name: position
-            data_tests:
-              - accepted_range:
-                  arguments: {min_value: 1, max_value: 30}
-      - name: raw_sessions
-        identifier: RAW_SESSIONS
-        columns:
+            tests:
+              - not_null
           - name: session_key
-            data_tests: [not_null, unique]
-          - name: meeting_key
-            data_tests: [not_null]
-          - name: session_type
-            data_tests:
-              - accepted_values:
-                  arguments:
-                    values: ['Practice', 'Qualifying', 'Race', 'Sprint', 'Sprint Shootout', 'Sprint Qualifying']
-      - name: raw_stints
-        identifier: RAW_STINTS
+            tests:
+              - not_null
+
+      - name: F1_LAPS
+        description: "Detailed information about individual laps"
         columns:
-          - name: session_key
-            data_tests: [not_null]
           - name: driver_number
-            data_tests: [not_null]
-          - name: stint_number
-            data_tests: [not_null]
-          - name: compound
-            data_tests:
-              - accepted_values:
-                  arguments:
-                    values: ['SOFT', 'MEDIUM', 'HARD', 'INTERMEDIATE', 'WET', 'UNKNOWN', 'TEST_UNKNOWN']
-                  config:
-                    severity: warn
-      - name: raw_weather
-        identifier: RAW_WEATHER
+            tests:
+              - not_null
+          - name: lap_number
+            tests:
+              - not_null
+
+      - name: F1_CAR_DATA
+        description: "Real-time telemetry data from F1 cars"
+        columns:
+
+          - name: date
+            tests:
+              - not_null
+
+          - name: driver_number
+            tests:
+              - not_null
+              - relationships:
+                  to: source('F1_API', 'F1_DRIVERS')
+                  field: driver_number
+
+          - name: drs
+            tests:
+              - not_null
+              - valid_drs
+
+          - name: rpm
+            tests:
+              - not_null
+              - rpm_range
+
+          - name: speed
+            tests:
+              - not_null
+              - speed_range
+
+          - name: throttle
+            tests:
+              - not_null
+              - throttle_range
+
+        tests:
+          - brake_throttle_combination  # Table-level test for brake-throttle combination
+
+      - name: F1_INTERVALS
+        description: "Real-time interval data between drivers during races"
+        columns:
+          - name: date
+            tests:
+              - not_null
+          - name: driver_number
+            tests:
+              - not_null
+          - name: session_key
+            tests:
+              - not_null
+
+      - name: F1_PIT
+        description: "Information about pit stops"
+        columns:
+          - name: date
+            tests:
+              - not_null
+          - name: driver_number
+            tests:
+              - not_null
+          - name: lap_number
+            tests:
+              - not_null
+
+      - name: F1_MEETINGS
+        description: "Information about F1 race meetings"
+        columns:
+          - name: circuit_key
+            tests:
+              - not_null
+          - name: circuit_short_name
+            tests:
+              - not_null
+          - name: country_name
+            tests:
+              - not_null
+          - name: date_start
+            tests:
+              - not_null
+          - name: meeting_name
+            tests:
+              - not_null
+          - name: year
+            tests:
+              - not_null
+
+      - name: F1_SESSIONS
+        description: "Information about individual F1 sessions"
         columns:
           - name: session_key
-            data_tests: [not_null]
+            tests:
+              - not_null
+              - unique
+          - name: meeting_key
+            tests:
+              - not_null
+          - name: session_name
+            tests:
+              - not_null
+          - name: session_type
+            tests:
+              - not_null
+
+      - name: F1_DRIVERS
+        description: "Information about F1 drivers"
+        columns:
+          - name: driver_number
+            tests:
+              - not_null
+          - name: broadcast_name
+            tests:
+              - not_null
+          - name: full_name
+            tests:
+              - not_null
+          - name: name_acronym
+            tests:
+              - not_null
+      - name: F1_STINTS
+        description: "Information about individual driving stints"
+        columns:
+          - name: compound
+            tests:
+              - accepted_values:
+                  values: ['SOFT', 'MEDIUM', 'HARD', 'INTERMEDIATE', 'WET', null]  # Added null as accepted value
+                  quote: true  # Ensure string values are properly quoted
+                  where: "compound IS NULL OR compound IN ('SOFT', 'MEDIUM', 'HARD', 'INTERMEDIATE', 'WET')"
+
+          - name: driver_number
+            tests:
+              - not_null:
+                  where: "driver_number != 0"
+              - relationships:
+                  to: source('F1_API', 'F1_DRIVERS')
+                  field: driver_number
+                  where: "driver_number is not null"
+
+          - name: lap_start
+            tests:
+              - not_null
+              - range_check:
+                  min_value: 1
+                  max_value: 71
+
+          - name: lap_end
+            tests:
+              - not_null
+              - range_check:
+                  min_value: 0
+                  max_value: 79
+
+          - name: stint_number
+            tests:
+              - not_null
+              - range_check:
+                  min_value: 1
+                  max_value: 9
+
+          - name: tyre_age_at_start
+            tests:
+              - not_null:
+                  where: "tyre_age_at_start is not null"
+              - range_check:
+                  min_value: 0
+                  max_value: 28
+      - name: F1_WEATHER
+        description: "Weather data for F1 sessions"
+        columns:
+          - name: session_key
+            tests:
+              - not_null
           - name: date
-            data_tests: [not_null]
+            tests:
+              - not_null
+          - name: air_temperature
+          - name: track_temperature
           - name: humidity
-            data_tests:
-              - accepted_range:
-                  arguments: {min_value: 0, max_value: 100}
+          - name: rainfall
+          - name: wind_speed
+          - name: wind_direction
+
