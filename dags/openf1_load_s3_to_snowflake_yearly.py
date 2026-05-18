@@ -382,7 +382,7 @@ _LOAD_SQL_TEMPLATE: str = "\n".join(
     tags=["openf1", "snowflake", "load-only"],
     default_args={
         "owner": "data-engineering",
-        "retries": 0,
+        "retries": 3,
     },
 )
 def openf1_load_s3_to_snowflake_check() -> None:
