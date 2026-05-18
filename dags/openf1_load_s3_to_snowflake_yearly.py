@@ -376,7 +376,7 @@ _LOAD_SQL_TEMPLATE: str = "\n".join(
     dag_id="openf1_load_s3_to_snowflake_yearly",
     description="Load-only OpenF1 S3 Parquet external stage ke Snowflake, tetap memakai check_new_sessions.",
     schedule=CronDataIntervalTimetable("0 0 15 5 *", timezone="UTC"),
-    start_date=datetime(2023, 1, 1),
+    start_date=datetime(2024, 1, 1),
     catchup=True,
     max_active_runs=3,
     tags=["openf1", "snowflake", "load-only"],

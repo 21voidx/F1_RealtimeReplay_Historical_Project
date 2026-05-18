@@ -378,11 +378,11 @@ _LOAD_SQL_TEMPLATE: str = "\n".join(
     schedule=CronDataIntervalTimetable("0 0 1 * *", timezone="UTC"),
     start_date=datetime(2024, 1, 1),
     catchup=True,
-    max_active_runs=1,
+    max_active_runs=6,
     tags=["openf1", "snowflake", "load-only"],
     default_args={
         "owner": "data-engineering",
-        "retries": 0,
+        "retries": 3,
     },
 )
 def openf1_load_s3_to_snowflake_check() -> None:
