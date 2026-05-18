@@ -1,5 +1,5 @@
 WITH source AS (
-    SELECT * FROM {{ source('F1_API', 'F1_LAPS') }}
+    SELECT * FROM {{ source('F1_API', 'RAW_LAPS') }}
 )
 SELECT
     session_key,

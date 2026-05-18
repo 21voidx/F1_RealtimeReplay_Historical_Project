@@ -1,3 +1,3 @@
 SELECT
 *
-FROM {{ source('F1_API', 'F1_PIT') }}
+FROM {{ source('F1_API', 'RAW_PIT') }}

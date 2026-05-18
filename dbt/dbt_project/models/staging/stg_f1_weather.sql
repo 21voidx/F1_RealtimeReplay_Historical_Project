@@ -1,2 +1,2 @@
 SELECT *
-FROM {{ source('F1_API', 'F1_WEATHER') }}
+FROM {{ source('F1_API', 'RAW_WEATHER') }}

@@ -31,6 +31,15 @@ clean-targets:         # directories to be removed by `dbt clean`
 # files using the `{{ config(...) }}` macro.
 models:
   f1_pipeline:
-    +materialized: table
     staging:
+      +schema: stg
       +materialized: view
+      +tags: ['staging', 'silver']
+    intermediate:
+      +schema: int
+      +materialized: table
+      +tags: ['intermediate', 'silver']
+    marts:
+      +schema: mart
+      +materialized: table
+      +tags: ['mart', 'gold']

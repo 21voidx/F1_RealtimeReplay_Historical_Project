@@ -5,7 +5,7 @@ sources:
     database: "{{ env_var('SNOWFLAKE_DATABASE') }}"
     schema: "{{ env_var('SNOWFLAKE_SCHEMA') }}"
     tables:
-      - name: F1_POSITION
+      - name: RAW_POSITION
         description: "Driver positions throughout a session"
         columns:
           - name: date
@@ -24,7 +24,7 @@ sources:
             tests:
               - not_null
 
-      - name: F1_LAPS
+      - name: RAW_LAPS
         description: "Detailed information about individual laps"
         columns:
           - name: driver_number
@@ -34,7 +34,7 @@ sources:
             tests:
               - not_null
 
-      - name: F1_CAR_DATA
+      - name: RAW_CAR_DATA
         description: "Real-time telemetry data from F1 cars"
         columns:
 
@@ -72,7 +72,7 @@ sources:
         tests:
           - brake_throttle_combination  # Table-level test for brake-throttle combination
 
-      - name: F1_INTERVALS
+      - name: RAW_INTERVALS
         description: "Real-time interval data between drivers during races"
         columns:
           - name: date
@@ -85,7 +85,7 @@ sources:
             tests:
               - not_null
 
-      - name: F1_PIT
+      - name: RAW_PIT
         description: "Information about pit stops"
         columns:
           - name: date
@@ -98,7 +98,7 @@ sources:
             tests:
               - not_null
 
-      - name: F1_MEETINGS
+      - name: RAW_MEETINGS
         description: "Information about F1 race meetings"
         columns:
           - name: circuit_key
@@ -120,7 +120,7 @@ sources:
             tests:
               - not_null
 
-      - name: F1_SESSIONS
+      - name: RAW_SESSIONS
         description: "Information about individual F1 sessions"
         columns:
           - name: session_key
@@ -137,7 +137,7 @@ sources:
             tests:
               - not_null
 
-      - name: F1_DRIVERS
+      - name: RAW_DRIVERS
         description: "Information about F1 drivers"
         columns:
           - name: driver_number
@@ -152,7 +152,7 @@ sources:
           - name: name_acronym
             tests:
               - not_null
-      - name: F1_STINTS
+      - name: RAW_STINTS
         description: "Information about individual driving stints"
         columns:
           - name: compound
@@ -199,7 +199,7 @@ sources:
               - range_check:
                   min_value: 0
                   max_value: 28
-      - name: F1_WEATHER
+      - name: RAW_WEATHER
         description: "Weather data for F1 sessions"
         columns:
           - name: session_key
