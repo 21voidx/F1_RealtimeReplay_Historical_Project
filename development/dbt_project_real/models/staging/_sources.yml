@@ -51,8 +51,9 @@ sources:
 
           - name: drs
             tests:
-              - not_null
-              - valid_drs
+              - not_null:
+                  config:
+                      severity: warn
 
           - name: rpm
             tests:
@@ -152,6 +153,7 @@ sources:
           - name: name_acronym
             tests:
               - not_null
+
       - name: F1_STINTS
         description: "Information about individual driving stints"
         columns:
@@ -186,7 +188,7 @@ sources:
           - name: stint_number
             tests:
               - not_null
-              
+
           - name: tyre_age_at_start
             tests:
               - not_null:

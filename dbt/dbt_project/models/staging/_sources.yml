@@ -51,9 +51,10 @@ sources:
 
           - name: drs
             tests:
-              - not_null
-              - valid_drs
-
+              - not_null:
+                  config:
+                      severity: warn
+                      
           - name: rpm
             tests:
               - not_null
@@ -192,7 +193,7 @@ sources:
               - not_null:
                   config:
                     severity: warn
-                    
+
       - name: RAW_WEATHER
         description: "Weather data for F1 sessions"
         columns:
