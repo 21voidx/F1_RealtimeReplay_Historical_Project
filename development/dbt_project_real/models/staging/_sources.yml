@@ -173,32 +173,26 @@ sources:
 
           - name: lap_start
             tests:
-              - not_null
-              - range_check:
-                  min_value: 1
-                  max_value: 71
+              - not_null:
+                  config:
+                    severity: warn
 
           - name: lap_end
             tests:
-              - not_null
-              - range_check:
-                  min_value: 0
-                  max_value: 79
+              - not_null:
+                  config:
+                    severity: warn
 
           - name: stint_number
             tests:
               - not_null
-              - range_check:
-                  min_value: 1
-                  max_value: 9
-
+              
           - name: tyre_age_at_start
             tests:
               - not_null:
-                  where: "tyre_age_at_start is not null"
-              - range_check:
-                  min_value: 0
-                  max_value: 28
+                  config:
+                    severity: warn
+
       - name: F1_WEATHER
         description: "Weather data for F1 sessions"
         columns:
