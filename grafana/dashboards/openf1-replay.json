@@ -1,0 +1,308 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "id": 1,
+      "type": "text",
+      "title": "Replay Control",
+      "gridPos": {
+        "h": 5,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "options": {
+        "mode": "html",
+        "content": "<div style='display:flex;gap:16px;align-items:center;flex-wrap:wrap;'><a href='http://localhost:8000/replay/run?session_key=${session_key}&driver_number=${driver_number}&replay_from=${replay_from}&speed_factor=${speed_factor}' target='_self' style='display:inline-block;padding:12px 18px;border-radius:10px;background:#2563eb;color:#ffffff;text-decoration:none;font-weight:700;'>\u25b6 Jalankan Replay 30 Menit</a><div><div><b>session_key</b>: ${session_key} | <b>driver_number</b>: ${driver_number}</div><div><b>replay_from</b>: ${replay_from} | <b>speed_factor</b>: ${speed_factor}x</div><div><b>replay_id</b>: ${replay_id}</div></div></div>"
+      }
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Speed",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 5
+      },
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse-openf1"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "queryType": "sql",
+          "rawSql": "SELECT event_time AS time, speed FROM openf1_replay.car_data WHERE $__timeFilter_ms(event_time) AND replay_id = '${replay_id}' ORDER BY event_time",
+          "format": 0
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "kmh"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Throttle",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 5
+      },
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse-openf1"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "queryType": "sql",
+          "rawSql": "SELECT event_time AS time, throttle FROM openf1_replay.car_data WHERE $__timeFilter_ms(event_time) AND replay_id = '${replay_id}' ORDER BY event_time",
+          "format": 0
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Gear & Brake",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 13
+      },
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse-openf1"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "queryType": "sql",
+          "rawSql": "SELECT event_time AS time, n_gear, brake FROM openf1_replay.car_data WHERE $__timeFilter_ms(event_time) AND replay_id = '${replay_id}' ORDER BY event_time",
+          "format": 0
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Race Position",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 13
+      },
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse-openf1"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "queryType": "sql",
+          "rawSql": "SELECT event_time AS time, position FROM openf1_replay.position WHERE $__timeFilter_ms(event_time) AND replay_id = '${replay_id}' ORDER BY event_time",
+          "format": 0
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 6,
+      "type": "table",
+      "title": "Latest Location",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 21
+      },
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse-openf1"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "queryType": "sql",
+          "rawSql": "SELECT event_time, driver_number, x, y, z FROM openf1_replay.location WHERE $__timeFilter_ms(event_time) AND replay_id = '${replay_id}' ORDER BY event_time DESC LIMIT 20",
+          "format": 1
+        }
+      ],
+      "options": {
+        "showHeader": true
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      }
+    }
+  ],
+  "refresh": "1s",
+  "schemaVersion": 41,
+  "tags": [
+    "openf1",
+    "replay",
+    "kafka",
+    "clickhouse"
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "session_key",
+        "label": "session_key",
+        "type": "textbox",
+        "query": "9161",
+        "current": {
+          "text": "9161",
+          "value": "9161"
+        },
+        "hide": 0
+      },
+      {
+        "name": "driver_number",
+        "label": "driver_number",
+        "type": "textbox",
+        "query": "81",
+        "current": {
+          "text": "81",
+          "value": "81"
+        },
+        "hide": 0
+      },
+      {
+        "name": "replay_from",
+        "label": "replay_from",
+        "type": "textbox",
+        "query": "2023-09-16T13:03:35",
+        "current": {
+          "text": "2023-09-16T13:03:35",
+          "value": "2023-09-16T13:03:35"
+        },
+        "hide": 0
+      },
+      {
+        "name": "speed_factor",
+        "label": "speed_factor",
+        "type": "custom",
+        "query": "1,2,5,10",
+        "current": {
+          "text": "5",
+          "value": "5"
+        },
+        "options": [
+          {
+            "text": "1",
+            "value": "1",
+            "selected": false
+          },
+          {
+            "text": "2",
+            "value": "2",
+            "selected": false
+          },
+          {
+            "text": "5",
+            "value": "5",
+            "selected": true
+          },
+          {
+            "text": "10",
+            "value": "10",
+            "selected": false
+          }
+        ],
+        "hide": 0
+      },
+      {
+        "name": "replay_id",
+        "label": "replay_id",
+        "type": "textbox",
+        "query": "__none__",
+        "current": {
+          "text": "__none__",
+          "value": "__none__"
+        },
+        "hide": 2
+      }
+    ]
+  },
+  "time": {
+    "from": "now-30m",
+    "to": "now"
+  },
+  "timepicker": {
+    "refresh_intervals": [
+      "1s",
+      "5s",
+      "10s",
+      "30s",
+      "1m"
+    ],
+    "time_options": [
+      "5m",
+      "15m",
+      "30m",
+      "1h",
+      "6h",
+      "12h",
+      "24h"
+    ]
+  },
+  "timezone": "utc",
+  "title": "OpenF1 Real-Time Replay",
+  "uid": "openf1-replay",
+  "version": 1
+}
